@@ -1,0 +1,7 @@
+.git
+**/bin
+**/obj
+.env
+.env.*
+workspaces
+**/node_modules
