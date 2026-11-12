@@ -29,21 +29,39 @@ public sealed class ImagePipeline(HttpClient http, IConfiguration config)
     public static bool CanReserve(decimal already, decimal amount, decimal budget) =>
         amount > 0 && budget > 0 && already + amount <= budget;
 
-    public async Task RunAsync(AgentTask task, string workspace, AgentDbContext db, CancellationToken ct)
+    public async Task RunAsync(AgentTask task, string workspace, AgentDbContext db,
+        CancellationToken ct, bool retry = false)
     {
         if (!task.EnableImageGeneration) return;
         var manifestPath = Path.Combine(workspace, "developer-team.assets.json");
-        // Designer may choose CSS/SVG only; no image calls in that case.
-        if (!File.Exists(manifestPath))
+        string manifest;
+        if (File.Exists(manifestPath))
         {
+            manifest = await File.ReadAllTextAsync(manifestPath, ct);
+        }
+        else if (retry)
+        {
+            // Older failed tasks had their manifest deleted before making the API call.
+            // Rebuild only from the validated brief already stored in PostgreSQL.
+            var previous = await db.Set<GeneratedAsset>().AsNoTracking()
+                .Where(a => a.TaskId == task.Id)
+                .OrderByDescending(a => a.CreatedAt).FirstOrDefaultAsync(ct);
+            if (previous is null)
+                throw new InvalidOperationException("No saved image brief is available for retry.");
+            manifest = JsonSerializer.Serialize(new { assets = new[] {
+                new { path = previous.Path, prompt = previous.Prompt,
+                    criteria = JsonSerializer.Deserialize<string[]>(previous.CriteriaJson) ?? [],
+                    size = previous.Size, transparent = previous.Transparent }
+            } });
+        }
+        else
+        {
+            // Designer chose CSS/SVG only: absolutely no image calls.
             task.ImageStatus = "skipped";
             await db.SaveChangesAsync(ct);
             return;
         }
-        var manifest = await File.ReadAllTextAsync(manifestPath, ct);
         var assets = ImageAssetManifest.Parse(manifest);
-        // Manifest is ephemeral: do not accidentally commit it with the deliverable.
-        File.Delete(manifestPath);
         if (assets.Count == 0)
         {
             task.ImageStatus = "skipped";
@@ -152,6 +170,8 @@ public sealed class ImagePipeline(HttpClient http, IConfiguration config)
                 throw;
             }
         }
+        // Remove only after successful generation, never before a failed paid request.
+        if (File.Exists(manifestPath)) File.Delete(manifestPath);
     }
 
     public static string ModelForAsset(bool transparent, string opaqueModel, string transparentModel) =>
