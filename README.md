@@ -195,6 +195,17 @@ side-view car at a time**. Browser layout code handles cell placement, margins,
 horizontal mirroring where appropriate, and wheel alignment. On manual retry,
 already completed car PNGs are reused and not regenerated.
 
+**Increase budget without recreating a task:** a failed image-stage task
+with saved workspace and no PR can have its image budget raised up to **$2.00**.
+The dashboard shows a budget input and **Сохранить бюджет** button.
+`PATCH /api/tasks/{id}/image-budget` accepts
+`{"imageBudgetUsd":0.75}`, validates the amount, and permits only increases.
+**Saving the budget does not run the image API or Codex.** A separate
+**Повторить генерацию (платно)** click resumes the task after the budget
+has been increased. Example: two 1024×1536 transparent assets reserve
+at least **$0.574** (2 × [0.015 draft + 0.012 evaluator + 0.260 final]);
+a $0.75 budget leaves room for additional draft attempts.
+
 **Retry without another coding turn:** if image generation fails before
 tests/review/PR publication (including HTTP 400 for an unsupported background),
 the task card offers **Повторить генерацию (платно)**. This atomically queues a

@@ -165,6 +165,18 @@ async function loadTasks() {
         ' / ' + escapeHtml(t.designerOutputTokens.toLocaleString('ru-RU')) : 'нет данных') +
         ' · Review: ' + (t.hasReviewerMetrics ? escapeHtml(t.reviewerInputTokens.toLocaleString('ru-RU')) +
         ' / ' + escapeHtml(t.reviewerOutputTokens.toLocaleString('ru-RU')) : 'нет данных') + ' <span>(вход / выход)</span></p>';
+      const canAdjustImageBudget = t.status === 'failed' && t.enableImageGeneration &&
+        ['planning','failed','rejected'].includes(t.imageStatus) && !t.pullRequestUrl &&
+        Number(t.imageBudgetUsd || 0) < 2;
+      const suggestedBudget = Math.min(2, Math.max(0.75,
+        Math.ceil((Number(t.imageBudgetUsd || 0) + 0.05) * 100) / 100,
+        Math.ceil((Number(t.imageReservedUsd || 0) + 0.20) * 100) / 100));
+      const imageBudgetEditor = canAdjustImageBudget
+        ? '<div class="image-budget-editor"><label>Бюджет изображений (USD) ' +
+          '<input type="number" min="0.05" max="2" step="0.05" data-budget-for="' + id +
+          '" value="' + suggestedBudget.toFixed(2) + '" aria-label="Новый бюджет изображений"></label>' +
+          '<button class="action" data-id="' + id + '" data-kind="increase-image-budget">Сохранить бюджет</button>' +
+          '<small>Сохранение не запускает платную генерацию. После него отдельно нажми «Повторить генерацию».</small></div>' : '';
       const retryImagesButton = t.status === 'failed' &&
         t.enableImageGeneration && (['failed', 'rejected'].includes(t.imageStatus) ||
           (t.imageStatus === 'planning' && Number(t.imageReservedUsd || 0) === 0)) &&
@@ -179,7 +191,7 @@ async function loadTasks() {
       const repository = t.repositoryUrl.replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/, '');
       return '<article class="task"><div class="task-header"><span class="agent-label"><span class="agent-icon" aria-hidden="true">' + '✳' + '</span>' + 'Задача команды' + '</span><span class="status ' + status + '">' + escapeHtml(statuses[t.status] || t.status) + '</span></div>' +
         '<h3>' + escapeHtml(t.prompt) + '</h3><div class="task-meta"><span>' + escapeHtml(repository) + '</span><span>⑂ ' + escapeHtml(t.baseBranch || 'default') + '</span><time datetime="' + escapeHtml(t.createdAt) + '">' +
-        escapeHtml(new Date(t.createdAt).toLocaleString('ru-RU')) + '</time></div>' + renderWorkflow(t) + renderParticipants(t) + checksLabel + tokens + images + error + '<div class="task-actions">' +
+        escapeHtml(new Date(t.createdAt).toLocaleString('ru-RU')) + '</time></div>' + renderWorkflow(t) + renderParticipants(t) + checksLabel + tokens + images + error + imageBudgetEditor + '<div class="task-actions">' +
         '<button class="action" data-id="' + id + '" data-kind="log">Лог</button>' +
         '<button class="action" data-id="' + id + '" data-kind="diff">Diff</button>' +
         '<button class="action" data-id="' + id + '" data-kind="checks">Проверки</button>' +
@@ -221,6 +233,74 @@ root.addEventListener('click', e => {
         await loadTasks();
       })
       .catch(err => { message.textContent = 'Ошибка исправления: ' + err.message; btn.disabled = false; });
+  } else if (btn.dataset.kind === 'increase-image-budget') {
+    const input = root.querySelector('input[data-budget-for="' + btn.dataset.id + '"]');
+    const newBudget = Number(input?.value);
+    if (!input || !Number.isFinite(newBudget) || newBudget < 0.05 || newBudget > 2) {
+      message.textContent = 'Укажи бюджет от $0.05 до $2.00.';
+      return;
+    }
+    btn.disabled = true;
+    fetch('/api/tasks/' + encodeURIComponent(btn.dataset.id) + '/image-budget', {
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({imageBudgetUsd:newBudget})
+    })
+      .then(async response => {
+        if (!response.ok) throw Error(await response.text());
+        message.textContent = 'Бюджет увеличен до 
+    btn.disabled = true;
+    fetch('/api/tasks/' + encodeURIComponent(btn.dataset.id) + '/retry-images', {method:'POST'})
+      .then(async response => {
+        if (!response.ok) throw Error(await response.text());
+        message.textContent = 'Изображение поставлено в очередь. Используется прежний код и описание ассета. Новый image API вызов платный.';
+        await loadTasks();
+      })
+      .catch(err => { message.textContent = 'Ошибка повторной генерации: ' + err.message; btn.disabled = false; });
+  } else if (btn.dataset.kind === 'images') showImages(btn.dataset.id);
+  else showText(btn.dataset.id, btn.dataset.kind);
+});
+document.querySelector('#images').addEventListener('change', () => {
+  document.querySelector('#imageSettings').hidden = !document.querySelector('#images').checked;
+});
+document.querySelector('#refresh').addEventListener('click', loadTasks);
+document.querySelector('#form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const button = document.querySelector('#submit');
+  button.disabled = true; message.textContent = 'Отправляю...';
+  try {
+    const response = await fetch('/api/tasks', {
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({repositoryUrl:document.querySelector('#repo').value,
+        prompt:document.querySelector('#prompt').value,
+        role:'auto',
+        baseBranch:document.querySelector('#baseBranch').value.trim() || null,
+        createPullRequest:document.querySelector('#pr').checked,
+        enableImageGeneration:document.querySelector('#images').checked,
+        imageBudgetUsd:Number(document.querySelector('#imageBudget').value)})
+    });
+    const body = await response.json();
+    if (!response.ok) throw Error(body.error || JSON.stringify(body));
+    message.textContent = 'Задача создана: ' + body.id;
+    document.querySelector('#prompt').value = '';
+    updatePromptCount();
+    await loadTasks();
+  } catch (err) { message.textContent = 'Ошибка: ' + err.message; }
+  finally { button.disabled = false; }
+});
+const updatePromptCount = () => {
+  document.querySelector('#promptCount').textContent = document.querySelector('#prompt').value.length.toLocaleString('ru-RU') + ' / 10 000';
+};
+document.querySelector('#prompt').addEventListener('input', updatePromptCount);
+document.querySelector('#closeDetails').addEventListener('click', () => {
+  details.hidden = true;
+  document.querySelector('#showMemory').focus();
+});
+loadTasks();setInterval(loadTasks,5000);
+ + newBudget.toFixed(2) +
+          '. Теперь можно нажать «Повторить генерацию (платно)». Само сохранение денег не списывает.';
+        await loadTasks();
+      })
+      .catch(err => { message.textContent = 'Ошибка изменения бюджета: ' + err.message; btn.disabled = false; });
   } else if (btn.dataset.kind === 'retry-images') {
     btn.disabled = true;
     fetch('/api/tasks/' + encodeURIComponent(btn.dataset.id) + '/retry-images', {method:'POST'})

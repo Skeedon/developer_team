@@ -213,3 +213,8 @@ h1{letter-spacing:-.8px}
 .image-asset pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#aab5c8}
 .image-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px}
 .image-grid img{max-width:100%;height:auto;border-radius:10px;border:1px solid #384456;display:block;margin-top:8px}
+
+.image-budget-editor{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin:0 0 14px;padding:11px 12px;border:1px solid #46506a;border-radius:9px;background:#1b2335}
+.image-budget-editor label{font-size:12px;display:flex;align-items:center;gap:9px}
+.image-budget-editor input{width:85px;padding:7px;border-radius:6px;border:1px solid #57637f;background:#101722;color:#e9edf3}
+.image-budget-editor small{display:block;flex-basis:100%;color:#aebbd0;font-size:11px}

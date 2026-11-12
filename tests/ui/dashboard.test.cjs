@@ -153,3 +153,30 @@ test('legacy failed image manifest can be retried after parser upgrade',async()=
   await ui.flush();
   assert.match(ui.element('#tasks').innerHTML,/data-kind="retry-images"/);
 });
+
+test('image budget update is offered for failed image planning before any paid request',async()=>{
+  const ui=setup([{...task,status:'failed',enableImageGeneration:true,
+    imageStatus:'planning',pullRequestUrl:null,imageBudgetUsd:0.35,imageReservedUsd:0,
+    error:'Insufficient budget for 2 separate image assets (minimum reserved USD 0.574)'}]);
+  await ui.flush();
+  const output=ui.element('#tasks').innerHTML;
+  assert.match(output,/data-kind="increase-image-budget"/);
+  assert.match(output,/data-budget-for="abc"/);
+  assert.match(output,/value="0.75"/);
+  assert.match(output,/Сохранение не запускает платную генерацию/);
+});
+
+test('saving increased image budget uses PATCH and never starts a paid image call',async()=>{
+  const ui=setup([{...task,status:'failed',enableImageGeneration:true,
+    imageStatus:'planning',pullRequestUrl:null,imageBudgetUsd:0.35,imageReservedUsd:0}]);
+  await ui.flush();
+  ui.element('#tasks').querySelector=() => ({value:'0.75'});
+  const button={disabled:false,dataset:{id:'abc',kind:'increase-image-budget'}};
+  await ui.listeners['#tasks:click']({target:{closest:()=>button}});
+  await ui.flush();
+  const call=ui.calls.find(c=>c.url==='/api/tasks/abc/image-budget');
+  assert.ok(call);
+  assert.equal(call.options.method,'PATCH');
+  assert.deepEqual(JSON.parse(call.options.body),{imageBudgetUsd:0.75});
+  assert.equal(ui.calls.filter(c=>c.url.includes('retry-images')).length,0);
+});
