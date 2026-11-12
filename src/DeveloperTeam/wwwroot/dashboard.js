@@ -15,15 +15,27 @@ async function showImages(id) {
     content.hidden = true;
     imageDetails.hidden = false;
     imageDetails.innerHTML = assets.length ? assets.map(asset => {
-      const draft = '/api/tasks/' + encodeURIComponent(id) + '/images/' + encodeURIComponent(asset.id) + '/draft';
-      const final = '/api/tasks/' + encodeURIComponent(id) + '/images/' + encodeURIComponent(asset.id) + '/final';
+      const url = '/api/tasks/' + encodeURIComponent(id) + '/images/' + encodeURIComponent(asset.id);
       const review = asset.review ? '<pre>' + escapeHtml(asset.review) + '</pre>' : '';
       return '<div class="image-asset"><h3>' + escapeHtml(asset.path) + '</h3>' +
         '<p>Статус: ' + escapeHtml(asset.status) + ' · Черновики: ' + Number(asset.draftAttempts) +
         ' · Финал: ' + Number(asset.finalAttempts) + ' · Оценка: ' +
         (asset.score == null ? '—' : Math.round(Number(asset.score) * 100) + '%') +
-        ' · Резерв: 
+        ' · Резерв: USD ' + Number(asset.reservedUsd).toFixed(3) + '</p>' +
+        '<div class="image-grid"><div><strong>Черновик</strong><img loading="lazy" src="' + url + '/draft" alt="Черновик изображения"></div>' +
+        (asset.finalAttempts ? '<div><strong>Финал</strong><img loading="lazy" src="' + url + '/final" alt="Финальное изображение"></div>' : '') +
+        '</div>' + review + (asset.error ? '<p class="failed">' + escapeHtml(asset.error) + '</p>' : '') + '</div>';
+    }).join('') : '<p>Изображения ещё не созданы. Возможно, Designer использовал CSS/SVG.</p>';
+    document.querySelector('#details-title').textContent = 'Изображения Designer';
+    details.hidden = false;
+    details.scrollIntoView({behavior:'auto'});
+    document.querySelector('#details-title').focus({preventScroll:true});
+  } catch (e) { message.textContent = 'Ошибка изображений: ' + e.message; }
+}
+async function showText(id, kind) {
   try {
+    content.hidden = false;
+    imageDetails.hidden = true;
     const response = await read('/api/tasks/' + encodeURIComponent(id) + '/' + kind);
     if (kind === 'checks') {
       const checks = await response.json();
@@ -159,7 +171,10 @@ async function loadTasks() {
         ' / ' + escapeHtml(t.reviewerOutputTokens.toLocaleString('ru-RU')) : 'нет данных') + ' <span>(вход / выход)</span></p>';
       const images = t.enableImageGeneration ?
         '<p class="tokens">Изображения · ' + escapeHtml(t.imageStatus || 'Ожидание') +
-        ' · бюджет 
+        ' · бюджет USD ' + Number(t.imageBudgetUsd).toFixed(2) +
+        ' · резерв USD ' + Number(t.imageReservedUsd || 0).toFixed(3) +
+        ' <span>(оценка, не фактический счёт)</span></p>' : '';
+      const error = t.error ? '<p class="failed task-error">' + escapeHtml(t.error) + '</p>' : '';
       const repository = t.repositoryUrl.replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/, '');
       return '<article class="task"><div class="task-header"><span class="agent-label"><span class="agent-icon" aria-hidden="true">' + '✳' + '</span>' + 'Задача команды' + '</span><span class="status ' + status + '">' + escapeHtml(statuses[t.status] || t.status) + '</span></div>' +
         '<h3>' + escapeHtml(t.prompt) + '</h3><div class="task-meta"><span>' + escapeHtml(repository) + '</span><span>⑂ ' + escapeHtml(t.baseBranch || 'default') + '</span><time datetime="' + escapeHtml(t.createdAt) + '">' +
