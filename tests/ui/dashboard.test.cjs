@@ -146,3 +146,10 @@ test('failed image task exposes manual retry without opening a new coding task',
   await ui.flush();
   assert.ok(ui.calls.some(c=>c.url==='/api/tasks/abc/retry-images'&&c.options.method==='POST'));
 });
+
+test('legacy failed image manifest can be retried after parser upgrade',async()=>{
+  const ui=setup([{...task,status:'failed',enableImageGeneration:true,
+    imageStatus:'planning',pullRequestUrl:null,imageBudgetUsd:0.35,imageReservedUsd:0}]);
+  await ui.flush();
+  assert.match(ui.element('#tasks').innerHTML,/data-kind="retry-images"/);
+});

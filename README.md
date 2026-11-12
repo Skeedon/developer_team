@@ -131,6 +131,15 @@ chooses CSS/SVG or existing assets; it creates a root-level
 }
 ```
 
+The manifest's `criteria` list can contain more than six checks or lengthy
+descriptions. The worker trims and deduplicates them, accepts a single string
+or descriptive objects, and supplies two general composition checks when
+none are specified. The complete manifest is still capped at 16 KB, and
+unsafe image paths, overly long prompts, unsupported sizes, and impossible
+multi-car sprite atlases are rejected before paid requests. Invalid manifests
+mark the task as an image-stage failure, so old failed tasks can be resumed
+with **Повторить генерацию (платно)** without running Designer again.
+
 Supported paths begin with `public/assets/`, `wwwroot/assets/`, or
 `assets/` and end in `.png`. Paths are validated against traversal,
 symlinks, secret-like names, and preexisting files. One raster asset per

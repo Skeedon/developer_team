@@ -48,4 +48,16 @@ public sealed class ImageRetryPolicyTests
         task.ImageStatus = "rejected";
         Assert.True(ImageRetryPolicy.Eligible.Compile()(task));
     }
+
+    [Fact]
+    public void LegacyManifestFailureMayBeRetriedWithoutAnotherDesignerCall()
+    {
+        var task = Ready();
+        task.ImageStatus = "planning";
+        task.ImageReservedUsd = 0m;
+        Assert.True(ImageRetryPolicy.Eligible.Compile()(task));
+        task.ImageReservedUsd = 0.015m;
+        Assert.False(ImageRetryPolicy.Eligible.Compile()(task));
+    }
+
 }

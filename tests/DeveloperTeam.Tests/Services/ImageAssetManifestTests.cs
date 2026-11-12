@@ -75,4 +75,60 @@ public class ImageAssetManifestTests
         Assert.Contains("ONE PNG asset per car", error.Message);
     }
 
+
+    [Fact]
+    public void AcceptsMoreThanSixDetailedCriteriaWithoutLosingRequirements()
+    {
+        var requirements = Enumerable.Range(1, 10)
+            .Select(n => "Requirement " + n + ": " + new string('x', 270)).ToArray();
+        var json = System.Text.Json.JsonSerializer.Serialize(new { assets = new[] { new {
+            path = "public/assets/car.png",
+            prompt = "A single car strictly from the left in semi-realistic game style",
+            size = "1024x1024", transparent = true, criteria = requirements
+        }}});
+        var asset = Assert.Single(ImageAssetManifest.Parse(json));
+        Assert.Equal(10, asset.Criteria.Length);
+        Assert.Equal(requirements[^1], asset.Criteria[^1]);
+        Assert.True(asset.Criteria[0].Length > 250);
+    }
+
+    [Theory]
+    [InlineData("absent")]
+    [InlineData("empty")]
+    [InlineData("blank")]
+    public void FallsBackToPromptBasedChecksWhenCriteriaMissingOrEmpty(string mode)
+    {
+        object asset = mode == "absent"
+            ? new { path = "assets/car.png", prompt = "One realistic passenger car in complete side profile" }
+            : new { path = "assets/car.png", prompt = "One realistic passenger car in complete side profile",
+                criteria = mode == "empty" ? Array.Empty<string>() : ["", "  ", " "] };
+        var json = System.Text.Json.JsonSerializer.Serialize(new { assets = new[] { asset } });
+        var parsed = Assert.Single(ImageAssetManifest.Parse(json));
+        Assert.Equal(2, parsed.Criteria.Length);
+        Assert.All(parsed.Criteria, x => Assert.Contains("prompt", x));
+    }
+
+    [Fact]
+    public void TrimsAndDeduplicatesDetailedCriteria()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(new { assets = new[] { new {
+            path = "assets/car.png", prompt = "Single detailed coupe in pure side profile",
+            criteria = new[] { " Strict side view ", "strict side view", "", " wheels fully visible " }
+        }}});
+        var asset = Assert.Single(ImageAssetManifest.Parse(json));
+        Assert.Equal(new[] { "Strict side view", "wheels fully visible" }, asset.Criteria);
+    }
+
+    [Fact]
+    public void AcceptsSingleStringAndStructuredCriterion()
+    {
+        const string json = """
+        {"assets":[{"path":"assets/car.png",
+         "prompt":"Single detailed passenger coupe in a strict side profile",
+         "criteria":[{"description":"Correct side profile"},"No background"]}]}
+        """;
+        var asset = Assert.Single(ImageAssetManifest.Parse(json));
+        Assert.Equal(new[] { "Correct side profile", "No background" }, asset.Criteria);
+    }
+
 }
