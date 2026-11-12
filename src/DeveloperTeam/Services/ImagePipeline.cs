@@ -70,7 +70,20 @@ public sealed class ImagePipeline(HttpClient http, IConfiguration config)
             await db.SaveChangesAsync(ct);
             return;
         }
-        var assets = ImageAssetManifest.Parse(manifest, maxAssets: 6);
+        IReadOnlyList<ImageAssetManifest.Asset> assets;
+        try
+        {
+            assets = ImageAssetManifest.Parse(manifest, maxAssets: 6);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or JsonException)
+        {
+            // A broken asset manifest is an image-stage failure. Mark it as such
+            // so an existing task can be resumed after the parser is updated,
+            // without another paid Designer/Codex turn.
+            task.ImageStatus = "failed";
+            await db.SaveChangesAsync(ct);
+            throw;
+        }
         if (assets.Count == 0)
         {
             task.ImageStatus = "skipped";

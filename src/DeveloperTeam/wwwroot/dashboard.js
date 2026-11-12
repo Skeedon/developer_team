@@ -166,7 +166,8 @@ async function loadTasks() {
         ' · Review: ' + (t.hasReviewerMetrics ? escapeHtml(t.reviewerInputTokens.toLocaleString('ru-RU')) +
         ' / ' + escapeHtml(t.reviewerOutputTokens.toLocaleString('ru-RU')) : 'нет данных') + ' <span>(вход / выход)</span></p>';
       const retryImagesButton = t.status === 'failed' &&
-        t.enableImageGeneration && ['failed', 'rejected'].includes(t.imageStatus) &&
+        t.enableImageGeneration && (['failed', 'rejected'].includes(t.imageStatus) ||
+          (t.imageStatus === 'planning' && Number(t.imageReservedUsd || 0) === 0)) &&
         !t.pullRequestUrl && Number(t.imageReservedUsd || 0) + 0.015 <= Number(t.imageBudgetUsd || 0)
         ? '<button class="action" data-id="' + id + '" data-kind="retry-images">Повторить генерацию (платно)</button>' : '';
       const images = t.enableImageGeneration ?
