@@ -11,6 +11,28 @@ public sealed class GitHubPublisher(HttpClient client, IConfiguration configurat
 {
     public record PublishedPullRequest(string Url, string Branch);
 
+    // Review repair is allowed only while the original draft PR is open.
+    public async Task EnsureOpenPullRequestAsync(AgentTask task, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(task.PullRequestUrl) ||
+            !Uri.TryCreate(task.PullRequestUrl, UriKind.Absolute, out var uri) ||
+            uri.Scheme != "https" || uri.Host != "github.com" ||
+            !Regex.IsMatch(uri.AbsolutePath, @"^/[a-zA-Z0-9-]+/[a-zA-Z0-9_.-]+/pull/[0-9]+$"))
+            throw new InvalidOperationException("Review repair requires a known GitHub PR.");
+        var token = configuration["GitHub:Token"];
+        if (string.IsNullOrWhiteSpace(token))
+            throw new InvalidOperationException("GitHub:Token is required.");
+        var parts = uri.AbsolutePath.Trim('/').Split('/');
+        var api = $"https://api.github.com/repos/{parts[0]}/{parts[1]}/pulls/{parts[3]}";
+        using var response = await ApiAsync(HttpMethod.Get, api, token, null, ct);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        var root = doc.RootElement;
+        if (root.GetProperty("state").GetString() != "open" ||
+            !string.Equals(root.GetProperty("head").GetProperty("ref").GetString(),
+                "agent/" + task.Id.ToString("N"), StringComparison.Ordinal))
+            throw new InvalidOperationException("The existing PR is closed or does not match the task branch.");
+    }
+
     public async Task<PublishedPullRequest> PublishAsync(AgentTask task, string workspace, CancellationToken ct)
     {
         var match = Regex.Match(task.RepositoryUrl,
@@ -23,13 +45,11 @@ public sealed class GitHubPublisher(HttpClient client, IConfiguration configurat
             throw new InvalidOperationException("GitHub:Token is required to create a Pull Request.");
 
         var commitMessage = "Agent: " + task.Id.ToString("N");
-        var currentCommit = (await GitAsync(workspace, null, ct, "log", "-1", "--format=%s")).Trim();
-        if (currentCommit != commitMessage)
+        var status = await GitAsync(workspace, null, ct, "status", "--porcelain");
+        // An existing PR branch may have a task commit at HEAD plus new review fixes.
+        // Commit any new changes instead of skipping them based on the previous title.
+        if (!string.IsNullOrWhiteSpace(status))
         {
-            var status = await GitAsync(workspace, null, ct, "status", "--porcelain");
-            if (string.IsNullOrWhiteSpace(status))
-                throw new InvalidOperationException("No changes were produced; PR not created.");
-
             await GitAsync(workspace, null, ct, "-c", "core.hooksPath=/dev/null", "add", "-A");
             var staged = await GitAsync(workspace, null, ct, "diff", "--cached", "--name-only");
             if (string.IsNullOrWhiteSpace(staged))
@@ -40,6 +60,10 @@ public sealed class GitHubPublisher(HttpClient client, IConfiguration configurat
                 "-c", "user.name=Developer Team Bot",
                 "-c", "user.email=developer-team-bot@users.noreply.github.com",
                 "commit", "-m", commitMessage);
+        }
+        else if ((await GitAsync(workspace, null, ct, "log", "-1", "--format=%s")).Trim() != commitMessage)
+        {
+            throw new InvalidOperationException("No changes were produced; PR not created.");
         }
 
         var branch = "agent/" + task.Id.ToString("N");
