@@ -15,6 +15,7 @@ public class ImagePipelineTests
 {
     private sealed class FakeImageApi(params bool[] reviewPasses) : HttpMessageHandler
     {
+        public string ExpectedModel { get; init; } = "gpt-image-1.5";
         public int DraftCalls { get; private set; }
         public int EditCalls { get; private set; }
         public int ReviewCalls { get; private set; }
@@ -31,6 +32,8 @@ public class ImagePipelineTests
             {
                 DraftCalls++;
                 Assert.Contains("\"quality\":\"low\"", body);
+                Assert.Contains("\"model\":\"" + ExpectedModel + "\"", body);
+                Assert.Contains("\"background\":\"transparent\"", body);
                 return Json(new { data = new[] { new { b64_json = Convert.ToBase64String(image) } },
                     usage = new { input_tokens = 123, output_tokens = 456 } });
             }
@@ -38,6 +41,8 @@ public class ImagePipelineTests
             {
                 EditCalls++;
                 Assert.Contains("\"quality\":\"high\"", body);
+                Assert.Contains("\"model\":\"" + ExpectedModel + "\"", body);
+                Assert.Contains("\"background\":\"transparent\"", body);
                 Assert.Contains("data:image/png;base64,", body);
                 return Json(new { data = new[] { new { b64_json = Convert.ToBase64String(image) } },
                     usage = new { input_tokens = 456, output_tokens = 789 } });
@@ -178,4 +183,13 @@ public class ImagePipelineTests
         }
         finally { Directory.Delete(path, true); }
     }
+    [Fact]
+    public void TransparentImagesNeverUseOpaqueOnlyModel()
+    {
+        Assert.Equal("gpt-image-1.5", ImagePipeline.ModelForAsset(true,
+            "gpt-image-2", "gpt-image-1.5"));
+        Assert.Equal("gpt-image-2", ImagePipeline.ModelForAsset(false,
+            "gpt-image-2", "gpt-image-1.5"));
+    }
+
 }
