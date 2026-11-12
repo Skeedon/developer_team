@@ -3,170 +3,58 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Developer Team</title>
-  <style>
-    :root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:dark;background:#101318;color:#e9edf3}
-    *{box-sizing:border-box}body{max-width:1050px;margin:35px auto;padding:0 20px}
-    h1{margin:0;font-size:30px}p{color:#abb5c3}h2{font-size:17px}
-    .panel{background:#1b2029;border:1px solid #303946;border-radius:13px;padding:22px;margin:18px 0}
-    label{display:block;font-size:13px;font-weight:650;margin:15px 0 7px}
-    input,textarea{width:100%;border:1px solid #465063;background:#121820;color:inherit;border-radius:8px;padding:12px;font:inherit}
-    textarea{min-height:110px;resize:vertical}
-    select{width:100%;border:1px solid #465063;background:#121820;color:inherit;border-radius:8px;padding:12px;font:inherit}
-    button,.action{display:inline-block;background:#2978df;border:0;border-radius:8px;color:white;padding:10px 15px;cursor:pointer;font:inherit;text-decoration:none}
-    button:disabled{opacity:.55;cursor:wait}
-    .action{background:#303f57;margin:4px 6px 4px 0;font-size:13px}
-    .muted{color:#9da8b8;font-size:13px}.task{border-top:1px solid #38404d;padding:16px 0}
-    .task:first-child{border-top:0}.task p{margin:7px 0;overflow-wrap:anywhere}
-    .status{font-weight:bold;color:#a0c5ff}.completed{color:#78ddb0}.failed{color:#ffa7a7}
-    pre{overflow:auto;white-space:pre-wrap;word-break:break-word;background:#0f151e;border:1px solid #394457;padding:15px;border-radius:8px;max-height:420px}
-    #message{min-height:1.4em}
-  </style>
+  <meta name="theme-color" content="#101318">
+  <title>Задачи · Developer Team</title>
+  <link rel="stylesheet" href="/dashboard.css">
 </head>
 <body>
-  <header><h1>Developer Team <span style="font-size:18px">⚙️</span></h1><p>Локальная панель для задач ИИ-разработчика · OpenAI Codex</p></header>
-  <nav><a class="action" href="/analytics.html">Аналитика агентов</a></nav>
-  <section class="panel">
-    <h2>Новая задача</h2>
-    <form id="form">
-      <label for="repo">GitHub-репозиторий (публичный)</label>
-      <input id="repo" required type="url" value="https://github.com/Skeedon/developer_team">
-      <label for="baseBranch">Исходная ветка (пусто = main/default)</label>
-      <input id="baseBranch" value="feat/initial-agent-platform" placeholder="main">
-      <label for="agentRole">Кому поручить задачу?</label>
-      <select id="agentRole">
-        <option value="developer">💻 Developer — код и функциональность</option>
-        <option value="designer">🎨 Designer — UI/UX, стили, адаптивность</option>
-      </select>
-      <p id="roleHint" class="muted">Developer работает над логикой и функциональностью проекта.</p>
-      <label for="prompt">Что нужно сделать?</label>
-      <textarea id="prompt" required maxlength="10000" placeholder="Добавь тесты к классу Calculator, запусти проверки и исправь ошибки…"></textarea>
-      <p><label><input type="checkbox" id="pr" checked style="width:auto;margin-right:8px">Создать Draft Pull Request в GitHub</label></p>
-      <p><button id="submit" type="submit">Отправить задачу</button>
-      <button id="showMemory" class="action" type="button">Память Reviewer</button></p>
-      <p id="message" class="muted" role="status"></p>
-    </form>
-  </section>
-  <section class="panel">
-    <h2>Задачи <button id="refresh" class="action" type="button">Обновить</button></h2>
-    <div id="tasks" aria-live="polite"><p>Загружаю...</p></div>
-  </section>
-  <section class="panel" id="details" hidden>
-    <h2 id="details-title">Результат</h2>
-    <pre id="details-content"></pre>
-  </section>
-  <script>
-    const root = document.querySelector('#tasks');
-    const message = document.querySelector('#message');
-    const details = document.querySelector('#details');
-    const content = document.querySelector('#details-content');
-    const escapeHtml = x => String(x ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    async function read(url) {
-      const response = await fetch(url);
-      if (!response.ok) throw Error(await response.text());
-      return response;
-    }
-    async function showText(id, kind) {
-      try {
-        const response = await read('/api/tasks/' + encodeURIComponent(id) + '/' + kind);
-        if (kind === 'checks') {
-          const checks = await response.json();
-          content.textContent = 'TESTS: ' + (checks.testStatus || 'pending') + '\n' +
-            (checks.testLog || '') + '\n\nREVIEWER: ' + (checks.reviewStatus || 'pending') +
-            '\n' + (checks.reviewLog || '');
-        } else content.textContent = await response.text();
-        document.querySelector('#details-title').textContent = kind === 'log' ? 'Лог агента' : kind === 'checks' ? 'Проверки и Reviewer' : 'Git diff';
-        details.hidden = false;
-        details.scrollIntoView({behavior:'smooth'});
-      } catch (e) { message.textContent = e.message; }
-    }
-    document.querySelector('#agentRole').addEventListener('change', e => {
-      document.querySelector('#roleHint').textContent = e.target.value === 'designer'
-        ? 'Designer меняет код интерфейса: компоненты, CSS, layout и анимации. Генерации изображений пока нет.'
-        : 'Developer работает над логикой и функциональностью проекта.';
-      document.querySelector('#prompt').placeholder = e.target.value === 'designer'
-        ? 'Улучши дизайн главной страницы: отступы, типографика, адаптивность, состояния кнопок…'
-        : 'Добавь тесты к классу Calculator, запусти проверки и исправь ошибки…';
-    });
-    window.showTaskText = showText;
-    document.querySelector('#showMemory').addEventListener('click', async () => {
-      try {
-        const repo = document.querySelector('#repo').value;
-        const response = await read('/api/tasks/reviewer-memory?repositoryUrl=' + encodeURIComponent(repo));
-        const memory = await response.json();
-        document.querySelector('#details-title').textContent = 'Память Reviewer · ' + repo;
-        content.textContent = memory.notes || 'Пока пусто. Reviewer заполнит память после первого успешного ревью.';
-        details.hidden = false;
-        details.scrollIntoView({behavior:'smooth'});
-      } catch (e) { message.textContent = 'Ошибка памяти: ' + e.message; }
-    });
-    async function loadTasks() {
-      try {
-        const tasks = await (await read('/api/tasks')).json();
-        if (!tasks.length) { root.innerHTML = '<p>Задач пока нет.</p>'; return; }
-        root.innerHTML = tasks.map(t => {
-          const status = escapeHtml(t.status);
-          const id = encodeURIComponent(t.id);
-          const downloadable = t.status === 'completed';
-          const prLink = t.pullRequestUrl ? '<a class="action" target="_blank" rel="noopener noreferrer" href="' + escapeHtml(t.pullRequestUrl) + '">Открыть PR</a>' : '';
-          const retryButton = t.createPullRequest && ['failed','publish_failed'].includes(t.status) && !t.pullRequestUrl
-            ? '<button class="action" data-id="' + id + '" data-kind="retry">Повторить публикацию PR</button>' : '';
-          const checksLabel = '<span class="muted">Тесты: ' + escapeHtml(t.testStatus || '—') +
-            ' · Reviewer: ' + escapeHtml(t.reviewStatus || '—') +
-            ' · Токены Dev: ' + (t.hasDeveloperMetrics ? escapeHtml(t.developerInputTokens.toLocaleString('ru-RU')) +
-            '/' + escapeHtml(t.developerOutputTokens.toLocaleString('ru-RU')) : 'Нет данных') +
-            ' · Review: ' + (t.hasReviewerMetrics ? escapeHtml(t.reviewerInputTokens.toLocaleString('ru-RU')) +
-            '/' + escapeHtml(t.reviewerOutputTokens.toLocaleString('ru-RU')) : 'Нет данных') + ' (вход/выход)</span>';
-          const error = t.error ? '<p class="failed">' + escapeHtml(t.error) + '</p>' : '';
-          return '<article class="task"><strong class="status ' + status + '">' + status + '</strong>' +
-            '<p><strong>' + (t.role === 'designer' ? '🎨 Designer' : '💻 Developer') + '</strong> · ' + escapeHtml(t.prompt) + '</p>' + '<p>' + checksLabel + '</p>' +
-            '<p class="muted">' + escapeHtml(t.repositoryUrl) + ' · ' + escapeHtml(t.baseBranch || 'default') + ' · ' +
-            escapeHtml(new Date(t.createdAt).toLocaleString('ru-RU')) + '</p>' + error +
-            '<button class="action" data-id="' + id + '" data-kind="log">Лог</button>' +
-            '<button class="action" data-id="' + id + '" data-kind="diff">Diff</button>' +
-            '<button class="action" data-id="' + id + '" data-kind="checks">Проверки</button>' +
-            (downloadable ? '<a class="action" href="/api/tasks/' + id + '/download">Скачать ZIP</a>' : '') + prLink + retryButton +
-            '</article>';
-        }).join('');
-      } catch (e) { root.textContent = 'Не удалось загрузить задачи: ' + e.message; }
-    }
-    root.addEventListener('click', e => {
-      const btn = e.target.closest('button[data-id]');
-      if (!btn) return;
-      if (btn.dataset.kind === 'retry') {
-        btn.disabled = true;
-        fetch('/api/tasks/' + encodeURIComponent(btn.dataset.id) + '/retry-publish', {method:'POST'})
-          .then(async response => {
-            if (!response.ok) throw Error(await response.text());
-            message.textContent = 'Публикация поставлена в очередь. Codex повторно не запускается.';
-            await loadTasks();
-          })
-          .catch(err => { message.textContent = 'Ошибка: ' + err.message; btn.disabled = false; });
-      } else showText(btn.dataset.id, btn.dataset.kind);
-    });
-    document.querySelector('#refresh').addEventListener('click', loadTasks);
-    document.querySelector('#form').addEventListener('submit', async e => {
-      e.preventDefault();
-      const button = document.querySelector('#submit');
-      button.disabled = true; message.textContent = 'Отправляю...';
-      try {
-        const response = await fetch('/api/tasks', {
-          method:'POST',headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({repositoryUrl:document.querySelector('#repo').value,
-            prompt:document.querySelector('#prompt').value,
-            role:document.querySelector('#agentRole').value,
-            baseBranch:document.querySelector('#baseBranch').value.trim() || null,
-            createPullRequest:document.querySelector('#pr').checked})
-        });
-        const body = await response.json();
-        if (!response.ok) throw Error(body.error || JSON.stringify(body));
-        message.textContent = 'Задача создана: ' + body.id;
-        document.querySelector('#prompt').value = '';
-        await loadTasks();
-      } catch (err) { message.textContent = 'Ошибка: ' + err.message; }
-      finally { button.disabled = false; }
-    });
-    loadTasks();setInterval(loadTasks,5000);
-  </script>
+  <a class="skip-link" href="#main">Перейти к содержимому</a>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Developer Team — главная"><span class="brand-mark" aria-hidden="true">&lt;/&gt;</span>Developer Team<span class="brand-tag">WORKSPACE</span></a>
+    <nav aria-label="Основная навигация"><a class="nav-link active" href="/" aria-current="page">Задачи</a><a class="nav-link" href="/analytics.html">Аналитика <span aria-hidden="true">↗</span></a></nav>
+    <span class="environment"><span class="dot"></span>Локальная среда</span>
+  </header>
+  <main id="main" class="workspace">
+    <div class="page-heading"><div><p class="eyebrow">УПРАВЛЕНИЕ ИИ-АГЕНТАМИ</p><h1>От идеи к pull request<span class="accent">.</span></h1><p class="intro">Поручите задачу команде. Следите за кодом, проверками и результатом.</p></div><span class="platform-label"><span class="platform-icon" aria-hidden="true">✳</span> Работает на OpenAI Codex</span></div>
+    <div class="dashboard-grid">
+      <section class="panel composer" aria-labelledby="new-task-title">
+        <div class="section-heading"><div><p class="eyebrow">СОЗДАНИЕ</p><h2 id="new-task-title">Новая задача</h2></div><span class="section-icon" aria-hidden="true">＋</span></div>
+        <form id="form">
+          <fieldset class="role-field"><legend>01 <span>Выберите исполнителя</span></legend>
+            <div class="role-options">
+              <label class="role-card"><input type="radio" name="agentRole" value="developer" checked><span class="role-symbol" aria-hidden="true">&lt;/&gt;</span><span><strong>Developer</strong><small>Код и функциональность</small></span><span class="radio-indicator" aria-hidden="true"></span></label>
+              <label class="role-card"><input type="radio" name="agentRole" value="designer"><span class="role-symbol designer-symbol" aria-hidden="true">◇</span><span><strong>Designer</strong><small>Интерфейсы и UI/UX</small></span><span class="radio-indicator" aria-hidden="true"></span></label>
+            </div>
+            <p id="roleHint" class="field-hint" aria-live="polite">Developer работает над логикой и функциональностью проекта.</p>
+          </fieldset>
+          <fieldset><legend>02 <span>Настройте рабочее пространство</span></legend>
+            <label for="repo">GitHub-репозиторий <span class="optional">публичный</span></label>
+            <input id="repo" required type="url" value="https://github.com/Skeedon/developer_team" spellcheck="false" autocomplete="url">
+            <label for="baseBranch">Исходная ветка <span class="optional">необязательно</span></label>
+            <input id="baseBranch" value="feat/initial-agent-platform" placeholder="main" spellcheck="false" aria-describedby="branchHint">
+            <p id="branchHint" class="field-hint">Оставьте пустым, чтобы использовать ветку по умолчанию.</p>
+          </fieldset>
+          <fieldset><legend>03 <span>Опишите задачу</span></legend>
+            <label class="sr-only" for="prompt">Что нужно сделать?</label>
+            <textarea id="prompt" required maxlength="10000" placeholder="Добавь тесты к классу Calculator, запусти проверки и исправь ошибки…" aria-describedby="promptHint"></textarea>
+            <div class="input-footer"><span id="promptHint">Результат начинается с чёткого задания</span><span id="promptCount">0 / 10 000</span></div>
+          </fieldset>
+          <label class="pr-option"><input type="checkbox" id="pr" checked><span><strong>Создать Draft Pull Request</strong><small>Изменения будут готовы к проверке в GitHub</small></span></label>
+          <button id="submit" class="primary-button" type="submit">Отправить задачу <span aria-hidden="true">↗</span></button>
+          <button id="showMemory" class="memory-button" type="button"><span aria-hidden="true">⌘</span> Память Reviewer <span aria-hidden="true">↗</span></button>
+          <p id="message" class="message" role="status"></p>
+        </form>
+      </section>
+      <section class="task-column" aria-labelledby="tasks-title">
+        <div class="section-heading task-list-heading"><div><p class="eyebrow">РАБОЧИЙ ПРОЦЕСС</p><h2 id="tasks-title">Задачи команды <span id="taskCount" class="count">—</span></h2></div><button id="refresh" class="action refresh-button" type="button"><span aria-hidden="true">↻</span> Обновить</button></div>
+        <div class="summary" aria-label="Сводка задач"><div><span class="summary-label"><span class="dot blue"></span>В работе</span><strong id="activeCount">—</strong></div><div><span class="summary-label"><span class="dot"></span>Завершено</span><strong id="completedCount">—</strong></div><div><span class="summary-label"><span class="dot red"></span>С ошибкой</span><strong id="failedCount">—</strong></div></div>
+        <p class="list-note">Последние задачи <span>Автообновление каждые 5 с</span></p>
+        <div id="tasks" aria-live="polite"><div class="empty-state"><span class="empty-icon" aria-hidden="true">↻</span><h3>Загружаем задачи</h3><p>Получаем актуальное состояние команды…</p></div></div>
+      </section>
+    </div>
+    <section class="panel details-panel" id="details" hidden aria-labelledby="details-title"><div class="section-heading"><h2 id="details-title" tabindex="-1">Результат</h2><button id="closeDetails" class="action" type="button" aria-label="Закрыть результат">Закрыть ×</button></div><pre id="details-content"></pre></section>
+    <footer>Developer Team <span>Код. Проверки. Результат.</span></footer>
+  </main>
+  <script src="/dashboard.js"></script>
 </body>
 </html>
