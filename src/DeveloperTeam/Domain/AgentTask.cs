@@ -9,7 +9,14 @@ public sealed class AgentTask
     public string Status { get; set; } = "";
     public DateTime CreatedAt { get; set; }
     public DateTime? StartedAt { get; set; }
+    // The original execution end timestamp is never overwritten on publication retry.
     public DateTime? FinishedAt { get; set; }
+    public DateTime? LastPublicationRetryAt { get; set; }
+
+    public void RecordPublicationRetry(DateTime attemptedAt)
+    {
+        LastPublicationRetryAt = attemptedAt;
+    }
     public string? WorkspacePath { get; set; }
     public string? Log { get; set; }
     public string? InitialDiff { get; set; }
