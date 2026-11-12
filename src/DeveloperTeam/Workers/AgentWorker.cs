@@ -81,7 +81,7 @@ public sealed class AgentWorker(
                 ["exec", "--sandbox", "workspace-write", "--json", "-C", workspace,
                     "--model", model,
                     "-c", "model_provider=bettertoken",
-                    "-c", "model_providers.bettertoken={name=\\"BetterToken\\",base_url=\\"" + baseUrl + "\\",env_key=\\"BETTERTOKEN_API_KEY\\",wire_api=\\"responses\\"}",
+                    "-c", $"model_providers.bettertoken={{name=\"BetterToken\",base_url=\"{baseUrl}\",env_key=\"BETTERTOKEN_API_KEY\",wire_api=\"responses\"}}",
                     prompt],
                 workspace, timeout.Token, new Dictionary<string, string> { ["BETTERTOKEN_API_KEY"] = apiKey });
             transcript.AppendLine(codex.Output);
