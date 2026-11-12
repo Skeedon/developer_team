@@ -97,6 +97,31 @@ public static class TaskEndpoints
             : Results.NotFound();
     });
 
+    // Increasing the budget never starts an image request. A separate explicit
+    // retry action is required, and only failed image-stage tasks can be edited.
+    group.MapPatch("/{id:guid}/image-budget", async (Guid id,
+        DeveloperTeam.Services.IncreaseImageBudgetRequest request,
+        IDbContextFactory<AgentDbContext> factory) =>
+    {
+        if (request.ImageBudgetUsd is < 0.05m or > 2.00m)
+            return Results.BadRequest(new { error = "Image budget must be between $0.05 and $2.00." });
+
+        await using var db = await factory.CreateDbContextAsync();
+        var changed = await db.Tasks
+            .Where(DeveloperTeam.Services.ImageBudgetPolicy.Editable)
+            .Where(t => t.Id == id && t.ImageBudgetUsd < request.ImageBudgetUsd &&
+                t.ImageReservedUsd <= request.ImageBudgetUsd)
+            .ExecuteUpdateAsync(x => x.SetProperty(t => t.ImageBudgetUsd,
+                request.ImageBudgetUsd));
+
+        if (changed == 1)
+            return Results.Ok(new { id, imageBudgetUsd = request.ImageBudgetUsd });
+
+        return await db.Tasks.AsNoTracking().AnyAsync(t => t.Id == id)
+            ? Results.Conflict(new { error = "Only failed image tasks can increase their budget. Budget cannot be lowered or exceed $2.00." })
+            : Results.NotFound();
+    });
+
     group.MapPost("/{id:guid}/retry-images", async (Guid id, IDbContextFactory<AgentDbContext> factory) =>
     {
         await using var db = await factory.CreateDbContextAsync();
