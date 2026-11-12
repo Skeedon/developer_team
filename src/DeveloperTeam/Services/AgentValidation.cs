@@ -1,0 +1,110 @@
+using System.Text;
+using Microsoft.Extensions.Configuration;
+
+namespace DeveloperTeam.Services;
+
+/// <summary>Sequential, bounded checks after a coding turn. Reviewer is read-only and never publishes.</summary>
+public static class AgentValidation
+{
+    public delegate Task<(int ExitCode, string Output)> CommandRunner(
+        string executable, IReadOnlyList<string> args, string workingDirectory,
+        CancellationToken token, IDictionary<string, string>? environment);
+
+    public sealed record Result(string TestStatus, string TestLog, string ReviewStatus, string ReviewLog);
+
+    public static async Task<Result> RunAsync(
+        string workspace, IConfiguration config, CommandRunner run, CancellationToken ct)
+    {
+        var tests = await RunTestsAsync(workspace, run, ct);
+        var review = await RunReviewAsync(workspace, config, run, ct);
+        return new Result(tests.Status, tests.Log, review.Status, review.Log);
+    }
+
+    private static async Task<(string Status, string Log)> RunTestsAsync(
+        string workspace, CommandRunner run, CancellationToken ct)
+    {
+        try
+        {
+            // Do not execute arbitrary repo-provided scripts. This first iteration handles .NET only.
+            var solutions = Directory.EnumerateFiles(workspace, "*.sln", SearchOption.TopDirectoryOnly)
+                .Concat(Directory.EnumerateFiles(workspace, "*.slnx", SearchOption.TopDirectoryOnly))
+                .OrderBy(x => x, StringComparer.Ordinal).ToList();
+            var testProjects = Directory.EnumerateFiles(workspace, "*.csproj", SearchOption.AllDirectories)
+                .Where(p => !p.Split(Path.DirectorySeparatorChar).Any(s => s is "obj" or "bin" or ".git"))
+                .Where(p => p.Contains("Test", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(p => p, StringComparer.Ordinal)
+                .ToList();
+            if (testProjects.Count == 0)
+                return ("not_configured", "No .NET test project detected. Automatic test execution was skipped.");
+
+            // Run the root solution if present; otherwise run each test project.
+            var targets = solutions.Count > 0 ? solutions.Take(1) : testProjects.AsEnumerable();
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromMinutes(6));
+            var output = new StringBuilder();
+            foreach (var target in targets)
+            {
+                var relative = Path.GetRelativePath(workspace, target);
+                output.AppendLine("$ dotnet test " + relative);
+                var check = await run("dotnet", ["test", relative, "--nologo", "--verbosity", "minimal"],
+                    workspace, timeout.Token, null);
+                output.AppendLine(check.Output);
+                if (check.ExitCode != 0)
+                    return ("failed", output.ToString());
+            }
+            return ("passed", output.ToString());
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return ("failed", "dotnet test timed out after 6 minutes.");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return ("failed", ex.Message);
+        }
+    }
+
+    private static async Task<(string Status, string Log)> RunReviewAsync(
+        string workspace, IConfiguration config, CommandRunner run, CancellationToken ct)
+    {
+        var key = config["OpenAI:ApiKey"];
+        var model = config["OpenAI:ReviewerModel"] ?? config["OpenAI:Model"];
+        if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(model))
+            return ("not_configured", "OpenAI reviewer credentials or model are missing.");
+
+        const string prompt = """
+            You are a SEPARATE code reviewer. Review the current uncommitted changes
+            relative to HEAD in this repository. Read the changed files and relevant context.
+            DO NOT modify files, run tests, commit, push, or use any credentials.
+            Look for functional bugs, security issues, regressions, missing validation
+            and insufficient test coverage. Explain only actionable findings with file
+            names and locations, ordered by severity. If you find none, say "No actionable findings".
+            """;
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromMinutes(5));
+            var result = await run("codex",
+                ["exec", "--sandbox", "read-only", "--json", "--ephemeral",
+                    "-C", workspace, "--model", model,
+                    "-c", "model_provider=\"openai\"", prompt],
+                workspace, timeout.Token,
+                new Dictionary<string, string>
+                {
+                    ["CODEX_API_KEY"] = key,
+                    ["OPENAI_BASE_URL"] = "https://api.openai.com/v1"
+                });
+            return result.ExitCode == 0
+                ? ("reviewed", result.Output)
+                : ("failed", "Reviewer exited with code " + result.ExitCode + ": " + result.Output);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return ("failed", "Reviewer timed out after 5 minutes.");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return ("failed", ex.Message);
+        }
+    }
+}
