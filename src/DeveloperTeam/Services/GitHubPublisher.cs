@@ -22,20 +22,25 @@ public sealed class GitHubPublisher(HttpClient client, IConfiguration configurat
         if (string.IsNullOrWhiteSpace(token))
             throw new InvalidOperationException("GitHub:Token is required to create a Pull Request.");
 
-        var status = await GitAsync(workspace, null, ct, "status", "--porcelain");
-        if (string.IsNullOrWhiteSpace(status))
-            throw new InvalidOperationException("No changes were produced; PR not created.");
+        var commitMessage = "Agent: " + task.Id.ToString("N");
+        var currentCommit = (await GitAsync(workspace, null, ct, "log", "-1", "--format=%s")).Trim();
+        if (currentCommit != commitMessage)
+        {
+            var status = await GitAsync(workspace, null, ct, "status", "--porcelain");
+            if (string.IsNullOrWhiteSpace(status))
+                throw new InvalidOperationException("No changes were produced; PR not created.");
 
-        await GitAsync(workspace, null, ct, "-c", "core.hooksPath=/dev/null", "add", "-A");
-        var staged = await GitAsync(workspace, null, ct, "diff", "--cached", "--name-only");
-        if (string.IsNullOrWhiteSpace(staged))
-            throw new InvalidOperationException("No staged changes; PR not created.");
+            await GitAsync(workspace, null, ct, "-c", "core.hooksPath=/dev/null", "add", "-A");
+            var staged = await GitAsync(workspace, null, ct, "diff", "--cached", "--name-only");
+            if (string.IsNullOrWhiteSpace(staged))
+                throw new InvalidOperationException("No staged changes; PR not created.");
 
-        await GitAsync(workspace, null, ct,
-            "-c", "core.hooksPath=/dev/null",
-            "-c", "user.name=Developer Team Bot",
-            "-c", "user.email=developer-team-bot@users.noreply.github.com",
-            "commit", "-m", "Agent: " + task.Id.ToString("N"));
+            await GitAsync(workspace, null, ct,
+                "-c", "core.hooksPath=/dev/null",
+                "-c", "user.name=Developer Team Bot",
+                "-c", "user.email=developer-team-bot@users.noreply.github.com",
+                "commit", "-m", commitMessage);
+        }
 
         var branch = "agent/" + task.Id.ToString("N");
         var askPassPath = Path.Combine(Path.GetTempPath(), "github-askpass-" + Guid.NewGuid().ToString("N") + ".sh");
@@ -63,6 +68,19 @@ public sealed class GitHubPublisher(HttpClient client, IConfiguration configurat
         var baseBranch = task.BaseBranch;
         if (string.IsNullOrWhiteSpace(baseBranch))
             throw new InvalidOperationException("Source branch was not resolved.");
+
+        // If PR creation succeeded before an earlier worker failure, return its URL.
+        using (var check = await ApiAsync(HttpMethod.Get,
+            api + "/pulls?state=all&head=" + Uri.EscapeDataString(owner + ":" + branch) +
+            "&base=" + Uri.EscapeDataString(baseBranch) + "&per_page=30", token, null, ct))
+        using (var existing = JsonDocument.Parse(await check.Content.ReadAsStringAsync(ct)))
+        {
+            if (existing.RootElement.GetArrayLength() > 0)
+            {
+                var found = existing.RootElement[0].GetProperty("html_url").GetString();
+                if (!string.IsNullOrEmpty(found)) return new PublishedPullRequest(found, branch);
+            }
+        }
 
         var title = task.Prompt.Replace('\n', ' ').Replace('\r', ' ').Trim();
         if (title.Length > 90) title = title[..90] + "…";
