@@ -42,6 +42,31 @@ public class AgentAnalyticsTests
     }
 
     [Fact]
+    public void DelayedPublicationRetry_DoesNotInflateAverageExecutionDuration()
+    {
+        var start = Now.AddMinutes(-2);
+        var first = new AgentTask
+        {
+            Status = "publish_failed", CreatedAt = start.AddMinutes(-1),
+            StartedAt = start, FinishedAt = Now
+        };
+        var other = new AgentTask
+        {
+            Status = "completed", CreatedAt = start,
+            StartedAt = Now.AddMinutes(-1), FinishedAt = Now
+        };
+
+        // The PR is republished seven days after the coding work finished.
+        first.Status = "completed";
+        first.RecordPublicationRetry(Now.AddDays(7));
+
+        Assert.Equal(Now, first.FinishedAt);
+        Assert.Equal(Now.AddDays(7), first.LastPublicationRetryAt);
+        var totals = AgentAnalytics.Totals(new[] { first, other }.AsQueryable()).Single();
+        Assert.Equal(90d, totals.AverageDurationSeconds);
+    }
+
+    [Fact]
     public void HistoricalMetricsStayUnknownAndMeasuredZerosStayZero()
     {
         var legacy = new AgentTask { CreatedAt = Now.AddDays(-1) };
