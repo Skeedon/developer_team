@@ -29,7 +29,19 @@ public sealed class AgentWorker(
                             .SetProperty(t => t.StartedAt, DateTime.UtcNow), stoppingToken);
                     if (claimed == 1) await RunTaskAsync(next, stoppingToken);
                 }
-                else await Task.Delay(TimeSpan.FromSeconds(3), stoppingToken);
+                else
+                {
+                    var retry = await db.Tasks.AsNoTracking().Where(t => t.Status == "publish_queued")
+                        .OrderBy(t => t.CreatedAt).Select(t => t.Id).FirstOrDefaultAsync(stoppingToken);
+                    if (retry == Guid.Empty)
+                        await Task.Delay(TimeSpan.FromSeconds(3), stoppingToken);
+                    else
+                    {
+                        var claimed = await db.Tasks.Where(t => t.Id == retry && t.Status == "publish_queued")
+                            .ExecuteUpdateAsync(x => x.SetProperty(t => t.Status, "publishing"), stoppingToken);
+                        if (claimed == 1) await RetryPublishAsync(retry, stoppingToken);
+                    }
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (Exception ex)
@@ -107,7 +119,14 @@ public sealed class AgentWorker(
 
             if (task.CreatePullRequest)
             {
-                var published = await publisher.PublishAsync(task, workspace, token);
+                task.Status = "publishing";
+                DeveloperTeam.Services.GitHubPublisher.PublishedPullRequest published;
+                try { published = await publisher.PublishAsync(task, workspace, token); }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    task.Status = "publish_failed";
+                    throw;
+                }
                 task.PullRequestUrl = published.Url;
                 task.PullRequestBranch = published.Branch;
                 transcript.AppendLine("Draft pull request: " + published.Url);
@@ -126,7 +145,7 @@ public sealed class AgentWorker(
         }
         catch (Exception ex)
         {
-            task.Status = "failed";
+            if (task.Status != "publish_failed") task.Status = "failed";
             task.Error = ex.Message;
             logger.LogWarning(ex, "Task {TaskId} failed", id);
         }
@@ -135,6 +154,40 @@ public sealed class AgentWorker(
             task.Log = Limit(transcript.ToString(), 200_000);
             task.FinishedAt = DateTime.UtcNow;
             // Complete writes even if shutdown token has been cancelled.
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+    }
+
+    // Publish a saved workspace without executing Codex or spending API tokens.
+    private async Task RetryPublishAsync(Guid id, CancellationToken token)
+    {
+        await using var db = await factory.CreateDbContextAsync(token);
+        var task = await db.Tasks.FirstAsync(t => t.Id == id, token);
+        var workspace = Path.Combine(config["Worker:WorkspaceRoot"] ?? "/workspaces", id.ToString("N"));
+        try
+        {
+            if (string.IsNullOrWhiteSpace(task.Diff) || !Directory.Exists(Path.Combine(workspace, ".git")))
+                throw new InvalidOperationException("Saved agent workspace or diff is missing.");
+            if (string.IsNullOrWhiteSpace(task.BaseBranch))
+                throw new InvalidOperationException("Source branch is missing.");
+
+            var result = await publisher.PublishAsync(task, workspace, token);
+            task.PullRequestUrl = result.Url;
+            task.PullRequestBranch = result.Branch;
+            task.Status = "completed";
+            task.Error = null;
+            task.Log = Limit((task.Log ?? "") + "\nPR publication retried: " + result.Url, 200_000);
+        }
+        catch (Exception ex)
+        {
+            task.Status = "publish_failed";
+            task.Error = ex.Message;
+            task.Log = Limit((task.Log ?? "") + "\nPR publication retry failed: " + ex.Message, 200_000);
+            logger.LogWarning(ex, "Retry publishing task {TaskId} failed", id);
+        }
+        finally
+        {
+            task.FinishedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(CancellationToken.None);
         }
     }
