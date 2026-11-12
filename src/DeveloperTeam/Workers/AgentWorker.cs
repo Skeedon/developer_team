@@ -60,10 +60,19 @@ public sealed class AgentWorker(
             if (Directory.Exists(workspace))
                 throw new InvalidOperationException("Task workspace already exists.");
 
-            var clone = await RunProcessAsync("git", ["clone", "--depth", "1", "--", task.RepositoryUrl, workspace], workspaceRoot, token);
+            var cloneArgs = new List<string> { "clone", "--depth", "1" };
+            if (!string.IsNullOrWhiteSpace(task.BaseBranch))
+                cloneArgs.AddRange(["--branch", task.BaseBranch, "--single-branch"]);
+            cloneArgs.AddRange(["--", task.RepositoryUrl, workspace]);
+            var clone = await RunProcessAsync("git", cloneArgs, workspaceRoot, token);
             transcript.AppendLine(clone.Output);
             if (clone.ExitCode != 0) throw new InvalidOperationException("Git clone failed.");
 
+            var sourceBranch = await RunProcessAsync("git", ["branch", "--show-current"], workspace, token);
+            if (sourceBranch.ExitCode != 0 || string.IsNullOrWhiteSpace(sourceBranch.Output))
+                throw new InvalidOperationException("Unable to resolve the source branch.");
+            task.BaseBranch = sourceBranch.Output.Trim();
+            transcript.AppendLine("Source branch: " + task.BaseBranch);
             var branch = await RunProcessAsync("git", ["checkout", "-b", $"agent/{id:N}"], workspace, token);
             transcript.AppendLine(branch.Output);
             if (branch.ExitCode != 0) throw new InvalidOperationException("Unable to create task branch.");

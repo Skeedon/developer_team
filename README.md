@@ -36,7 +36,7 @@ The worker uses the built-in OpenAI provider and `https://api.openai.com/v1`. Mo
 
 Add `GitHub:Token` to ignored `config/appsettings.Local.json`. Create a fine-grained GitHub PAT restricted to your target repository with **Contents: Read and write** and **Pull requests: Read and write** permissions.
 
-The dashboard lets you choose whether to create a draft PR. The worker commits changes in a new `agent/<task-id>` branch, pushes to the specified GitHub repository, and opens a **draft** PR against the default branch. The system does not merge PRs. A task with no changes will fail PR publication instead of creating an empty PR.
+The dashboard lets you provide an optional source branch. The worker clones this branch and uses it as the base of the draft PR; leaving it empty uses the repository default branch. The dashboard lets you choose whether to create a draft PR. The worker commits changes in a new `agent/<task-id>` branch, pushes to the specified GitHub repository, and opens a **draft** PR against the default branch. The system does not merge PRs. A task with no changes will fail PR publication instead of creating an empty PR.
 
 **Security:** This MVP runs Codex in the same container as the credential-bearing worker. An untrusted repository could attempt to access the local secret file. Use only repositories you control, restrict the token to those repositories, and keep the API localhost-only. Hardened separation is required before untrusted or multi-user workloads.
 

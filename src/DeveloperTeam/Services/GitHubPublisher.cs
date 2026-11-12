@@ -60,10 +60,9 @@ public sealed class GitHubPublisher(HttpClient client, IConfiguration configurat
         finally { File.Delete(askPassPath); }
 
         var api = $"https://api.github.com/repos/{owner}/{repo}";
-        using var detailsResponse = await ApiAsync(HttpMethod.Get, api, token, null, ct);
-        using var details = JsonDocument.Parse(await detailsResponse.Content.ReadAsStringAsync(ct));
-        var baseBranch = details.RootElement.GetProperty("default_branch").GetString()
-            ?? throw new InvalidOperationException("No default branch found.");
+        var baseBranch = task.BaseBranch;
+        if (string.IsNullOrWhiteSpace(baseBranch))
+            throw new InvalidOperationException("Source branch was not resolved.");
 
         var title = task.Prompt.Replace('\n', ' ').Replace('\r', ' ').Trim();
         if (title.Length > 90) title = title[..90] + "…";

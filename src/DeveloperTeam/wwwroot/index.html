@@ -29,6 +29,8 @@
     <form id="form">
       <label for="repo">GitHub-репозиторий (публичный)</label>
       <input id="repo" required type="url" value="https://github.com/Skeedon/developer_team">
+      <label for="baseBranch">Исходная ветка (пусто = main/default)</label>
+      <input id="baseBranch" value="feat/initial-agent-platform" placeholder="main">
       <label for="prompt">Что нужно сделать?</label>
       <textarea id="prompt" required maxlength="10000" placeholder="Добавь тесты к классу Calculator, запусти проверки и исправь ошибки…"></textarea>
       <p><label><input type="checkbox" id="pr" checked style="width:auto;margin-right:8px">Создать Draft Pull Request в GitHub</label></p>
@@ -77,7 +79,7 @@
           const error = t.error ? '<p class="failed">' + escapeHtml(t.error) + '</p>' : '';
           return '<article class="task"><strong class="status ' + status + '">' + status + '</strong>' +
             '<p>' + escapeHtml(t.prompt) + '</p>' +
-            '<p class="muted">' + escapeHtml(t.repositoryUrl) + ' · ' +
+            '<p class="muted">' + escapeHtml(t.repositoryUrl) + ' · ' + escapeHtml(t.baseBranch || 'default') + ' · ' +
             escapeHtml(new Date(t.createdAt).toLocaleString('ru-RU')) + '</p>' + error +
             '<button class="action" data-id="' + id + '" data-kind="log">Лог</button>' +
             '<button class="action" data-id="' + id + '" data-kind="diff">Diff</button>' +
@@ -100,6 +102,7 @@
           method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({repositoryUrl:document.querySelector('#repo').value,
             prompt:document.querySelector('#prompt').value,
+            baseBranch:document.querySelector('#baseBranch').value.trim() || null,
             createPullRequest:document.querySelector('#pr').checked})
         });
         const body = await response.json();

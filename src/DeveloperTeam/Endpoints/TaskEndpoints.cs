@@ -16,7 +16,7 @@ public static class TaskEndpoints
         return Results.Ok(await db.Tasks.AsNoTracking()
             .OrderByDescending(x => x.CreatedAt)
             .Take(100)
-            .Select(x => new { x.Id, x.RepositoryUrl, x.Prompt, x.Status, x.CreatedAt, x.StartedAt, x.FinishedAt, x.Error, x.CreatePullRequest, x.PullRequestUrl })
+            .Select(x => new { x.Id, x.RepositoryUrl, x.BaseBranch, x.Prompt, x.Status, x.CreatedAt, x.StartedAt, x.FinishedAt, x.Error, x.CreatePullRequest, x.PullRequestUrl })
             .ToListAsync());
     });
 
@@ -26,7 +26,7 @@ public static class TaskEndpoints
         var task = await db.Tasks.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
         return task is null ? Results.NotFound() : Results.Ok(new
         {
-            task.Id, task.RepositoryUrl, task.Prompt, task.Status, task.CreatedAt,
+            task.Id, task.RepositoryUrl, task.BaseBranch, task.Prompt, task.Status, task.CreatedAt,
             task.StartedAt, task.FinishedAt, task.Error, task.WorkspacePath,
             task.CreatePullRequest, task.PullRequestUrl, task.PullRequestBranch,
             HasDiff = !string.IsNullOrWhiteSpace(task.Diff)
@@ -54,11 +54,22 @@ public static class TaskEndpoints
         if (string.IsNullOrWhiteSpace(request.Prompt) || request.Prompt.Length > 10000)
             return Results.BadRequest(new { error = "Prompt must have 1–10000 characters." });
 
+        var sourceBranch = request.BaseBranch?.Trim();
+        if (!string.IsNullOrEmpty(sourceBranch) &&
+            (sourceBranch.Length > 150 || sourceBranch.StartsWith('-') || sourceBranch.StartsWith('.') ||
+             sourceBranch.EndsWith('.') || sourceBranch.EndsWith('/') ||
+             sourceBranch.Contains("..") || sourceBranch.Contains("//") ||
+             sourceBranch.Contains("@{") || sourceBranch.Contains("/.") ||
+             sourceBranch.EndsWith(".lock") ||
+             sourceBranch.Any(c => !(char.IsAsciiLetterOrDigit(c) || c is '_' or '-' or '/' or '.'))))
+            return Results.BadRequest(new { error = "Invalid Git source branch." });
+
         var task = new AgentTask
         {
             Id = Guid.NewGuid(),
             RepositoryUrl = request.RepositoryUrl.Trim().TrimEnd('/'),
             Prompt = request.Prompt.Trim(),
+            BaseBranch = string.IsNullOrWhiteSpace(sourceBranch) ? null : sourceBranch,
             Status = "queued",
             CreatePullRequest = request.CreatePullRequest,
             CreatedAt = DateTime.UtcNow
