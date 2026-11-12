@@ -35,11 +35,11 @@ public static class ImageAssetManifest
                 !new[] { "1024x1024", "1536x1024", "1024x1536" }.Contains(size) ||
                 prompt.Length is < 20 or > 3000)
                 throw new InvalidOperationException("Invalid image path, size, or prompt.");
-            var criteria = item.TryGetProperty("criteria", out var cr) && cr.ValueKind == JsonValueKind.Array
-                ? cr.EnumerateArray().Select(x => x.GetString() ?? "").ToArray()
-                : [];
-            if (criteria.Length is < 1 or > 6 || criteria.Any(x => x.Length is < 3 or > 250))
-                throw new InvalidOperationException("Image criteria must contain 1–6 short requirements.");
+            // Designer-authored requirements are guidance, not a fixed-size protocol.
+            // The whole manifest is already limited to 16 KB above. Rejecting >6
+            // requirements or a 251-character sentence blocks good tasks before
+            // generation and provides no safety benefit.
+            var criteria = ReadCriteria(item, prompt);
             // A generative image model cannot reliably solve multi-car sprite atlas
             // geometry and exact pixel placement. Avoid charging for impossible work.
             // Each car must be a separate PNG; layout is the frontend's responsibility.
@@ -55,6 +55,52 @@ public static class ImageAssetManifest
         return assets;
     }
 
+
+    private static string[] ReadCriteria(JsonElement item, string prompt)
+    {
+        // Accept both a single textual criterion and an array. Trim empty entries,
+        // deduplicate repetitions, and keep all distinct substantive instructions.
+        // The outer 16 KB manifest cap bounds the amount sent to the vision model.
+        var result = new List<string>();
+        if (item.TryGetProperty("criteria", out var value))
+        {
+            if (value.ValueKind == JsonValueKind.String)
+                result.Add(value.GetString() ?? "");
+            else if (value.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var entry in value.EnumerateArray())
+                {
+                    if (entry.ValueKind == JsonValueKind.String)
+                        result.Add(entry.GetString() ?? "");
+                    else if (entry.ValueKind == JsonValueKind.Object)
+                    {
+                        // Tolerate a common LLM variation:
+                        // "criteria": [{"description": "Strict side view"}].
+                        foreach (var key in new[] { "description", "text", "requirement" })
+                        {
+                            if (entry.TryGetProperty(key, out var description) &&
+                                description.ValueKind == JsonValueKind.String)
+                            {
+                                result.Add(description.GetString() ?? "");
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        var normalized = result.Select(x => x.Trim())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+
+        // No explicit requirements? Use broad, useful composition checks rather
+        // than rejecting a task. The full detailed prompt remains available.
+        return normalized.Length == 0
+            ? ["The primary subject matches the image prompt.",
+               "The main composition, perspective and visible elements match the image prompt."]
+            : normalized;
+    }
 
     private static bool LooksLikeCar(string path, string prompt, IEnumerable<string> criteria)
     {
