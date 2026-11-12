@@ -204,7 +204,7 @@ public class ImagePipelineTests
                 Id = Guid.NewGuid(), TaskId = task.Id, Status = "failed",
                 Path = "public/assets/car.png",
                 Prompt = "Realistic full car side profile on a transparent background for the racing game",
-                CriteriaJson = "[\\"Car is fully visible\\",\\"Exact side profile\\"]",
+                CriteriaJson = JsonSerializer.Serialize(new[] { "Car is fully visible", "Exact side profile" }),
                 Size = "1024x1024", Transparent = true
             });
             await db.SaveChangesAsync();
