@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: developer_team
       POSTGRES_USER: agent
-      POSTGRES_PASSWORD: developer-team-local-only
+      POSTGRES_PASSWORD: PostgresPasswordPollo
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
     - "127.0.0.1:5433:5432"
@@ -24,7 +24,7 @@ services:
     restart: unless-stopped
     environment:
       APP_ROLE: api
-      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=developer_team;Username=agent;Password=developer-team-local-only"
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=developer_team;Username=agent;Password=PostgresPasswordPollo"
       ASPNETCORE_URLS: http://0.0.0.0:8080
     volumes:
       - agent_workspaces:/workspaces:ro
@@ -43,7 +43,7 @@ services:
     environment:
       APP_ROLE: worker
       CODEX_HOME: /tmp/codex-home
-      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=developer_team;Username=agent;Password=developer-team-local-only"
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=developer_team;Username=agent;Password=PostgresPasswordPollo"
     volumes:
       - agent_workspaces:/workspaces
       - ./config/appsettings.Local.json:/app/appsettings.Local.json:ro
