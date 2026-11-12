@@ -76,6 +76,38 @@ in code with the same model configuration as Developer. No extra model call is
 made solely to assign agents. Mixed tasks may cost more because two coding turns
 are executed; the existing automatic fix/review flow is shared, not duplicated.
 
+## Repository context and explicit Reviewer repairs
+
+Before running Codex, the worker derives a bounded, sanitized **source-file map**
+from Git's file list. This is local processing (no extra model call), helps
+identify relevant modules, and does not restrict which files the agent can read.
+For tasks involving both Designer and Developer, Developer additionally receives
+a short (at most 2,500-character) handoff from Designer's final message. These
+hints can reduce redundant exploration but are not guaranteed to lower costs;
+the agents still verify source files and use the same configured models.
+
+After a successful Reviewer pass, `HasReviewFindings` distinguishes actionable
+findings from an explicit "No actionable findings". The dashboard highlights
+findings and offers **Исправить замечания** when the task was completed and its
+existing PR is available. The button calls `POST /api/tasks/{id}/fix-review`.
+This explicitly opts into a **paid** Codex correction attempt. The worker
+atomically claims the queued task, verifies that the original PR is still open,
+reuses its saved workspace, implements the fix, reruns available tests and
+independent review, then pushes an additional commit to the **same PR**.
+It does not automatically repeat paid review corrections. There can be at most
+three user-triggered repair attempts per task. Tokens accumulate under the actual
+repair agent and Reviewer; original task metrics are not reset. The original
+`FinishedAt` remains unchanged for analytics. Historical completed review
+reports are classified on startup and may show the button if their saved
+workspace and open PR still exist. Failed review runs do not count as findings.
+
+If review has cleared all findings but updating the existing PR failed, the
+dashboard offers **Повторить публикацию исправлений**: it retries publication
+without another Codex call. All corrections require an intact `agent_workspaces`
+volume and an open GitHub PR. Closed or merged PRs are rejected, and the worker
+never pushes changes directly to `main`. No change to the model or automatic
+image generation is included.
+
 ## Automated tests and independent Reviewer
 
 After Codex edits the repository, the worker executes a bounded `dotnet test` run
