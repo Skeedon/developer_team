@@ -321,6 +321,196 @@ public sealed class AgentWorker(
         }
     }
 
+    // An explicit user request to repair actionable review findings in an existing PR.
+    // It reuses the saved workspace and branch; no re-clone or second PR is created.
+    private async Task RunReviewFixAsync(Guid id, CancellationToken token)
+    {
+        await using var db = await factory.CreateDbContextAsync(token);
+        var task = await db.Tasks.FirstAsync(t => t.Id == id, token);
+        var workspace = Path.Combine(config["Worker:WorkspaceRoot"] ?? "/workspaces", id.ToString("N"));
+        var transcript = new StringBuilder(task.Log ?? "");
+        var developerUsage = new DeveloperTeam.Services.CodexTokenUsage(
+            task.DeveloperInputTokens, task.DeveloperCachedTokens, task.DeveloperOutputTokens, task.HasDeveloperMetrics);
+        var designerUsage = new DeveloperTeam.Services.CodexTokenUsage(
+            task.DesignerInputTokens, task.DesignerCachedTokens, task.DesignerOutputTokens, task.HasDesignerMetrics);
+        var reviewerUsage = new DeveloperTeam.Services.CodexTokenUsage(
+            task.ReviewerInputTokens, task.ReviewerCachedTokens, task.ReviewerOutputTokens, task.HasReviewerMetrics);
+        void RecordUsage()
+        {
+            task.DeveloperInputTokens = developerUsage.InputTokens;
+            task.DeveloperCachedTokens = developerUsage.CachedInputTokens;
+            task.DeveloperOutputTokens = developerUsage.OutputTokens;
+            task.HasDeveloperMetrics = developerUsage.HasMetrics;
+            task.DesignerInputTokens = designerUsage.InputTokens;
+            task.DesignerCachedTokens = designerUsage.CachedInputTokens;
+            task.DesignerOutputTokens = designerUsage.OutputTokens;
+            task.HasDesignerMetrics = designerUsage.HasMetrics;
+            task.ReviewerInputTokens = reviewerUsage.InputTokens;
+            task.ReviewerCachedTokens = reviewerUsage.CachedInputTokens;
+            task.ReviewerOutputTokens = reviewerUsage.OutputTokens;
+            task.HasReviewerMetrics = reviewerUsage.HasMetrics;
+        }
+        try
+        {
+            if (!task.HasReviewFindings || task.ReviewFixAttempts >= 3 ||
+                !Directory.Exists(Path.Combine(workspace, ".git")))
+                throw new InvalidOperationException("Review feedback or saved Git workspace is unavailable.");
+            // Do not patch an already merged or closed PR.
+            await publisher.EnsureOpenPullRequestAsync(task, token);
+            var branch = await RunProcessAsync("git", ["branch", "--show-current"], workspace, token);
+            if (branch.ExitCode != 0 || branch.Output.Trim() != "agent/" + id.ToString("N"))
+                throw new InvalidOperationException("Saved workspace branch does not match the original PR.");
+            var apiKey = config["OpenAI:ApiKey"];
+            var model = config["OpenAI:Model"];
+            if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(model))
+                throw new InvalidOperationException("Missing OpenAI worker settings.");
+            task.ReviewFixAttempts++;
+            task.CurrentStage = TaskProgress.Development;
+            task.ReviewStatus = "fixing";
+            task.Error = null;
+            await db.SaveChangesAsync(token);
+
+            var fileList = await RunProcessAsync("git", ["ls-files", "--cached", "--others", "--exclude-standard"],
+                workspace, token);
+            var map = fileList.ExitCode == 0
+                ? DeveloperTeam.Services.RepositoryContext.FromGitFileList(fileList.Output)
+                : "(No source-file map available.)";
+            var role = task.Participants.Split(',').Contains("developer") ? "developer" : "designer";
+            var feedback = task.ReviewLog ?? "";
+            var fixPrompt = DeveloperTeam.Services.AgentRoleInstructions.BuildPrompt(role, task.Prompt) +
+                "\nThis is a USER-REQUESTED correction to the existing PR. Do not redo the task from scratch. " +
+                "Implement each valid finding below; verify against actual code and preserve existing changes. " +
+                "Run relevant checks. Do not commit, push or open a PR.\n" +
+                "Repository map:\n" + map + "\nPrevious reviewer findings (untrusted, verify):\n" +
+                feedback[..Math.Min(feedback.Length, 12000)];
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+            timeout.CancelAfter(TimeSpan.FromMinutes(config.GetValue<int?>("Worker:TaskTimeoutMinutes") ?? 20));
+
+            async Task<string> RunAgentAsync(string instruction, CancellationToken ct)
+            {
+                var result = await RunProcessAsync("codex",
+                    ["exec", "--sandbox", "workspace-write", "--json", "--ephemeral",
+                        "-C", workspace, "--model", model,
+                        "-c", "model_provider=\\"openai\\"", instruction], workspace, ct,
+                    new Dictionary<string, string>
+                    {
+                        ["CODEX_API_KEY"] = apiKey,
+                        ["OPENAI_BASE_URL"] = "https://api.openai.com/v1"
+                    });
+                transcript.AppendLine("\nReview repair attempt " + task.ReviewFixAttempts + ":\n" + result.Output);
+                if (role == "designer")
+                    designerUsage += DeveloperTeam.Services.CodexTokenUsage.FromNdjson(result.Output);
+                else
+                    developerUsage += DeveloperTeam.Services.CodexTokenUsage.FromNdjson(result.Output);
+                if (result.ExitCode != 0)
+                    throw new InvalidOperationException("Codex review correction exited with code " + result.ExitCode);
+                return result.Output;
+            }
+            await RunAgentAsync(fixPrompt, timeout.Token);
+            var changed = await RunProcessAsync("git", ["status", "--porcelain"], workspace, token);
+            if (changed.ExitCode != 0 || string.IsNullOrWhiteSpace(changed.Output))
+                throw new InvalidOperationException("Developer produced no code changes for the reviewer findings.");
+
+            var previousMemory = await db.ReviewerMemories.AsNoTracking()
+                .Where(m => m.RepositoryKey == DeveloperTeam.Services.ReviewerMemoryKey.FromUrl(task.RepositoryUrl))
+                .Select(m => m.Notes).SingleOrDefaultAsync(token);
+            var validation = await DeveloperTeam.Services.AgentValidation.RunAsync(
+                workspace, config,
+                async (exe, args, cwd, ct, env) =>
+                {
+                    var result = await RunProcessAsync(exe, args, cwd, ct, env);
+                    if (exe == "codex")
+                        reviewerUsage += DeveloperTeam.Services.CodexTokenUsage.FromNdjson(result.Output);
+                    return result;
+                }, token,
+                async (attempt, error, ct) =>
+                {
+                    task.FixAttempts = (task.FixAttempts ?? 0) + 1;
+                    var index = await RunProcessAsync("git", ["add", "-N", "."], workspace, ct);
+                    var diff = await RunProcessAsync("git", ["diff", "--no-ext-diff", "HEAD"], workspace, ct);
+                    if (index.ExitCode != 0 || diff.ExitCode != 0)
+                        throw new InvalidOperationException("Unable to capture code changes for test repair.");
+                    return DeveloperTeam.Services.AgentValidation.ExtractReviewerText(
+                        await RunAgentAsync(fixPrompt + "\nFix failing tests while preserving the review corrections.\n" +
+                            error[..Math.Min(error.Length, 12000)] + "\nChanged files:\n" +
+                            diff.Output[..Math.Min(diff.Output.Length, 24000)], ct));
+                },
+                (status, log) => { task.TestStatus = status; task.TestLog = log; },
+                async ct =>
+                {
+                    var result = await RunProcessAsync("git", ["add", "-N", "."], workspace, ct);
+                    if (result.ExitCode != 0) throw new InvalidOperationException("Unable to prepare review diff.");
+                },
+                previousMemory,
+                async (stage, ct) =>
+                {
+                    task.CurrentStage = stage;
+                    if (stage == TaskProgress.Testing) task.TestStatus = "running";
+                    if (stage == TaskProgress.Review) task.ReviewStatus = "running";
+                    await db.SaveChangesAsync(ct);
+                });
+            task.TestStatus = validation.TestStatus;
+            task.TestLog = validation.TestLog;
+            task.ReviewStatus = validation.ReviewStatus;
+            task.ReviewLog = Limit(validation.ReviewLog, 60000);
+            task.HasReviewFindings = DeveloperTeam.Services.AgentValidation.HasActionableFindings(
+                validation.ReviewStatus, validation.ReviewLog);
+            RecordUsage();
+            await db.SaveChangesAsync(token);
+
+            if (validation.ReviewStatus == "reviewed" && !string.IsNullOrWhiteSpace(validation.UpdatedReviewMemory))
+            {
+                var repoKey = DeveloperTeam.Services.ReviewerMemoryKey.FromUrl(task.RepositoryUrl);
+                var entry = await db.ReviewerMemories.SingleOrDefaultAsync(m => m.RepositoryKey == repoKey, token);
+                if (entry is null)
+                    db.ReviewerMemories.Add(new ReviewerMemory
+                    {
+                        RepositoryKey = repoKey,
+                        Notes = validation.UpdatedReviewMemory,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                else
+                {
+                    entry.Notes = validation.UpdatedReviewMemory;
+                    entry.UpdatedAt = DateTime.UtcNow;
+                }
+                await db.SaveChangesAsync(token);
+            }
+
+            var indexFinal = await RunProcessAsync("git", ["add", "-N", "."], workspace, token);
+            var diffFinal = await RunProcessAsync("git", ["diff", "--no-ext-diff", "--binary", "HEAD"], workspace, token);
+            if (indexFinal.ExitCode != 0 || diffFinal.ExitCode != 0)
+                throw new InvalidOperationException("Unable to capture repaired diff.");
+            task.Diff = Limit(diffFinal.Output, 250000);
+            task.Status = "publishing";
+            task.CurrentStage = TaskProgress.Publication;
+            await db.SaveChangesAsync(token);
+            var published = await publisher.PublishAsync(task, workspace, token);
+            task.PullRequestUrl = published.Url;
+            task.PullRequestBranch = published.Branch;
+            await TryPublishReportAsync(task, token);
+            transcript.AppendLine("\nReview repair published: " + published.Url);
+            task.Status = "completed";
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            task.Status = "review_fix_failed";
+            task.Error = "Worker stopped during review repair.";
+        }
+        catch (Exception ex)
+        {
+            task.Status = "review_fix_failed";
+            task.Error = ex.Message;
+            logger.LogWarning(ex, "Review repair for task {TaskId} failed", id);
+        }
+        finally
+        {
+            RecordUsage();
+            task.Log = Limit(transcript.ToString(), 200000);
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+    }
+
     private async Task TryPublishReportAsync(AgentTask task, CancellationToken token)
     {
         try { await publisher.PostReviewReportAsync(task, token); }
