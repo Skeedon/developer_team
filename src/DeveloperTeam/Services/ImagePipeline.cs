@@ -20,11 +20,20 @@ public sealed class ImagePipeline(HttpClient http, IConfiguration config)
     public const decimal EvaluatorReserveUsd = 0.012m;
     public const decimal FinalSquareReserveUsd = 0.270m;
     public const decimal FinalLandscapeReserveUsd = 0.230m;
+    public const decimal TransparentSquareReserveUsd = 0.180m;
+    public const decimal TransparentLandscapeReserveUsd = 0.260m;
     public const int MaxDrafts = 2;
-    public const double AcceptanceThreshold = 0.80;
+    public const double AcceptanceThreshold = 0.75;
 
-    public static decimal FinalReserve(string size) => size == "1024x1024"
-        ? FinalSquareReserveUsd : FinalLandscapeReserveUsd;
+    // GPT Image 1.5 supports transparency; budget its separate output token rate.
+    // Reservations are conservative allowances including edits' reference-image input.
+    public static decimal FinalReserve(string size, bool transparent = false) =>
+        transparent
+            ? (size == "1024x1024" ? TransparentSquareReserveUsd : TransparentLandscapeReserveUsd)
+            : (size == "1024x1024" ? FinalSquareReserveUsd : FinalLandscapeReserveUsd);
+
+    public static decimal MinimumRemainingBudget(string size, bool transparent) =>
+        DraftReserveUsd + EvaluatorReserveUsd + FinalReserve(size, transparent);
 
     public static bool CanReserve(decimal already, decimal amount, decimal budget) =>
         amount > 0 && budget > 0 && already + amount <= budget;
@@ -113,8 +122,17 @@ public sealed class ImagePipeline(HttpClient http, IConfiguration config)
             {
                 string feedback = "";
                 byte[]? accepted = null;
+                var reviewHistory = new List<string>();
                 for (var attempt = 1; attempt <= MaxDrafts; attempt++)
                 {
+                    // Do not purchase a draft if no possible budget remains for a
+                    // vision check and eventual final image. This prevents money
+                    // spent on a draft that can never be finalized.
+                    if (!CanReserve(task.ImageReservedUsd,
+                            MinimumRemainingBudget(brief.Size, brief.Transparent), task.ImageBudgetUsd))
+                        throw new InvalidOperationException(
+                            "Insufficient remaining image budget for a draft, its review and a final render. " +
+                            "No additional image request was made.");
                     Reserve(task, asset, DraftReserveUsd);
                     asset.DraftAttempts = attempt;
                     asset.Status = task.ImageStatus = "draft";
@@ -133,7 +151,8 @@ public sealed class ImagePipeline(HttpClient http, IConfiguration config)
                     asset.EvaluatorInputTokens += verdict.InputTokens;
                     asset.EvaluatorOutputTokens += verdict.OutputTokens;
                     asset.Score = verdict.Score;
-                    asset.Review = verdict.Details;
+                    reviewHistory.Add("Draft " + attempt + ": " + verdict.Details);
+                    asset.Review = string.Join(Environment.NewLine, reviewHistory);
                     await db.SaveChangesAsync(ct);
                     if (verdict.Pass && verdict.Score >= AcceptanceThreshold)
                     {
@@ -145,12 +164,17 @@ public sealed class ImagePipeline(HttpClient http, IConfiguration config)
                 if (accepted is null)
                 {
                     asset.Status = task.ImageStatus = "rejected";
-                    asset.Error = "Draft did not meet the requirements. No high-quality generation was charged.";
+                    var lastReport = feedback.Length > 0 ? feedback : "Visual requirements were not confirmed.";
+                    asset.Error = "Both drafts failed visual review. Last score: " +
+                        (asset.Score.HasValue ? asset.Score.Value.ToString("P0",
+                            System.Globalization.CultureInfo.InvariantCulture) : "unknown") +
+                        ". Findings: " + lastReport[..Math.Min(lastReport.Length, 500)] +
+                        ". No high-quality generation was charged.";
                     await db.SaveChangesAsync(ct);
                     throw new InvalidOperationException(asset.Error);
                 }
 
-                Reserve(task, asset, FinalReserve(brief.Size));
+                Reserve(task, asset, FinalReserve(brief.Size, brief.Transparent));
                 asset.Status = task.ImageStatus = "finalizing";
                 asset.FinalAttempts = 1;
                 await db.SaveChangesAsync(ct);
@@ -245,57 +269,127 @@ public sealed class ImagePipeline(HttpClient http, IConfiguration config)
         ImageAssetManifest.Asset brief, byte[] image, CancellationToken ct)
     {
         var checks = string.Join("\n- ", brief.Criteria);
-        var text = "You are an independent visual QA reviewer. Inspect the supplied draft image, not the prompt alone. " +
-            "Decide whether it matches the required composition, style, and all listed criteria. " +
-            "Be strict about missing subjects, incorrect perspective, important text, and transparency. " +
-            "Return ONLY a JSON object with keys pass (boolean), score (number 0..1), " +
-            "issues (array of short strings). No markdown. If uncertain, set pass=false.\n" +
-            "Image brief: " + brief.Prompt + "\nRequirements:\n- " + checks;
+        var text = """
+            You are a visual QA evaluator of a LOW-QUALITY COMPOSITION DRAFT.
+            Evaluate the image you actually see, not just the image description.
+            This is NOT a final-quality image. Judge only essential visual requirements:
+            - The requested subject is clearly recognizable.
+            - The required view, composition, orientation and number of subjects match.
+            - The subject is fully visible when requested; no fatal crop or wrong camera angle.
+            - Obvious forbidden elements (such as unwanted text or scenery) are absent.
+            Do NOT reject a draft because it is rough, low-resolution, lacks fine details,
+            has imperfect reflections, looks less polished, or is not yet photorealistic.
+            Those are exactly what the high-quality final edit is meant to improve.
+            Do NOT guess whether the image has an alpha channel by looking at a composited
+            preview. Background transparency is controlled by the image generation API.
+            A minor artistic difference is not a hard failure. Hard geometric/subject
+            violations are failures even if the picture looks beautiful.
+            The score is for CORE COMPOSITION COMPLIANCE (0..1), NOT visual polish.
+            Set pass=true whenever there is no major blocker and core composition is
+            broadly right; scores of 0.75+ are appropriate for acceptable drafts.
+            If pass=false, give concrete, visually observable corrections.
+            Reply in JSON adhering to the supplied schema, without markdown.
+            """;
+        text += "\nImage brief: " + brief.Prompt + "\nExpected size: " + brief.Size +
+            "\nRequirements:\n- " + checks;
+
         using var response = await SendAsync(key, "responses", new
         {
-            model, max_output_tokens = 250,
+            model,
+            max_output_tokens = 350,
+            text = new
+            {
+                format = new
+                {
+                    type = "json_schema",
+                    name = "composition_draft_review",
+                    strict = true,
+                    schema = new
+                    {
+                        type = "object",
+                        additionalProperties = false,
+                        properties = new
+                        {
+                            pass = new { type = "boolean" },
+                            score = new { type = "number" },
+                            issues = new { type = "array", items = new { type = "string" } }
+                        },
+                        required = new[] { "pass", "score", "issues" }
+                    }
+                }
+            },
             input = new[] { new { role = "user", content = new object[]
             {
                 new { type = "input_text", text },
                 new { type = "input_image", image_url = "data:image/png;base64," +
-                    Convert.ToBase64String(image), detail = "low" }
+                    Convert.ToBase64String(image), detail = "high" }
             } } }
         }, ct);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStreamAsync(ct));
         var root = doc.RootElement;
         var body = "";
-        if (root.TryGetProperty("output", out var output))
+        if (root.TryGetProperty("output", out var output) && output.ValueKind == JsonValueKind.Array)
             foreach (var message in output.EnumerateArray())
-                if (message.TryGetProperty("content", out var content))
+                if (message.TryGetProperty("content", out var content) &&
+                    content.ValueKind == JsonValueKind.Array)
                     foreach (var part in content.EnumerateArray())
                         if (part.TryGetProperty("type", out var type) &&
                             type.GetString() == "output_text" &&
                             part.TryGetProperty("text", out var msg))
                             body += msg.GetString();
-        var pass = false; var score = 0d;
-        string[] issues = ["Vision evaluator did not return valid JSON."];
-        try
+
+        // A malformed, refused or incomplete vision response is an evaluator
+        // failure, not proof that the image itself is bad. Stop paid retries.
+        if (!TryParseDraftReview(body, out var pass, out var score, out var issues))
         {
-            using var result = JsonDocument.Parse(body);
-            var obj = result.RootElement;
-            pass = obj.GetProperty("pass").GetBoolean();
-            score = obj.GetProperty("score").GetDouble();
-            if (!double.IsFinite(score) || score is < 0 or > 1) { pass = false; score = 0; }
-            issues = obj.GetProperty("issues").EnumerateArray()
-                .Take(6).Select(x => x.GetString() ?? "").Where(x => x.Length > 0).ToArray();
+            var status = root.TryGetProperty("status", out var st) ? st.GetString() : "unknown";
+            throw new InvalidOperationException(
+                "Vision evaluator did not produce a valid structured review (response status: " +
+                status + "). No additional image generation was attempted.");
         }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException or KeyNotFoundException)
-        {
-            pass = false; score = 0;
-        }
+
         var usage = root.TryGetProperty("usage", out var u) ? u : default;
         var inputTokens = usage.ValueKind == JsonValueKind.Object &&
             usage.TryGetProperty("input_tokens", out var i) ? i.GetInt64() : 0;
         var outputTokens = usage.ValueKind == JsonValueKind.Object &&
             usage.TryGetProperty("output_tokens", out var o) ? o.GetInt64() : 0;
-        var detail = JsonSerializer.Serialize(new { pass, score, issues });
-        return new Verdict(pass, score, detail, string.Join("; ", issues)[..Math.Min(1500,
-            string.Join("; ", issues).Length)], inputTokens, outputTokens);
+
+        var details = JsonSerializer.Serialize(new { pass, score, issues });
+        var feedback = issues.Length > 0 ? string.Join("; ", issues) : "Core composition did not pass.";
+        return new Verdict(pass, score, details,
+            feedback[..Math.Min(feedback.Length, 1500)], inputTokens, outputTokens);
+    }
+
+    public static bool TryParseDraftReview(string? json, out bool pass, out double score, out string[] issues)
+    {
+        pass = false;
+        score = 0;
+        issues = [];
+        if (string.IsNullOrWhiteSpace(json)) return false;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var obj = doc.RootElement;
+            if (obj.ValueKind != JsonValueKind.Object ||
+                !obj.TryGetProperty("pass", out var p) ||
+                (p.ValueKind != JsonValueKind.True && p.ValueKind != JsonValueKind.False) ||
+                !obj.TryGetProperty("score", out var value) ||
+                value.ValueKind != JsonValueKind.Number ||
+                !value.TryGetDouble(out score) ||
+                !double.IsFinite(score) || score < 0 || score > 1 ||
+                !obj.TryGetProperty("issues", out var list) ||
+                list.ValueKind != JsonValueKind.Array || list.GetArrayLength() > 12)
+                return false;
+            if (list.EnumerateArray().Any(x => x.ValueKind != JsonValueKind.String))
+                return false;
+            pass = p.GetBoolean();
+            issues = list.EnumerateArray()
+                .Take(6).Select(x => x.GetString() ?? "")
+                .Where(x => x.Length > 0)
+                .Select(x => x[..Math.Min(x.Length, 220)]).ToArray();
+            return true;
+        }
+        catch (JsonException) { return false; }
     }
 
     private async Task<HttpResponseMessage> SendAsync(string key, string endpoint, object payload, CancellationToken ct)
