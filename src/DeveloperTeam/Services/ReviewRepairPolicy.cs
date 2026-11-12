@@ -1,0 +1,17 @@
+using System.Linq.Expressions;
+using DeveloperTeam.Domain;
+
+namespace DeveloperTeam.Services;
+
+/// <summary>One immutable eligibility rule shared by API and regression tests.</summary>
+public static class ReviewRepairPolicy
+{
+    public const int MaxAttempts = 3;
+
+    public static readonly Expression<Func<AgentTask, bool>> Eligible = task =>
+        ((task.Status == "completed" && task.ReviewStatus == "reviewed") ||
+          task.Status == "review_fix_failed") &&
+        task.HasReviewFindings && task.ReviewFixAttempts < MaxAttempts &&
+        task.CreatePullRequest && task.PullRequestUrl != null &&
+        task.WorkspacePath != null && task.Diff != null && task.Diff != "";
+}
