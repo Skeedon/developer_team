@@ -5,6 +5,26 @@ namespace DeveloperTeam.Services;
 // Codex --json emits a turn.completed event with usage per invocation.
 public readonly record struct CodexTokenUsage(long InputTokens, long CachedInputTokens, long OutputTokens, bool HasMetrics = false)
 {
+    /// <summary>
+    /// Keep the final lifecycle events when a verbose Codex session exceeds the log cap.
+    /// Codex emits turn.completed usage at the end; truncating from the start
+    /// silently turns a real billable call into "no metrics".
+    /// </summary>
+    public static string PreserveLifecycleTail(string output, int maxChars)
+    {
+        if (maxChars <= 0) throw new ArgumentOutOfRangeException(nameof(maxChars));
+        if (output.Length <= maxChars) return output;
+        const string separator = "\n[earlier process output truncated]\n";
+        if (maxChars <= separator.Length + 2) return output[^maxChars..];
+        var prefixLength = Math.Min(maxChars / 4, maxChars - separator.Length - 1);
+        var suffixLength = maxChars - separator.Length - prefixLength;
+        var suffix = output[^suffixLength..];
+        // Ignore the first partial NDJSON line; the final usage event stays intact.
+        var firstNewline = suffix.IndexOf('\n');
+        if (firstNewline >= 0) suffix = suffix[(firstNewline + 1)..];
+        return output[..prefixLength] + separator + suffix;
+    }
+
     public static CodexTokenUsage FromNdjson(string output)
     {
         long input = 0, cached = 0, outputCount = 0;
