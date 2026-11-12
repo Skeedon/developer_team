@@ -64,7 +64,7 @@ public static class AgentValidation
         (log.Contains("Permission denied", StringComparison.OrdinalIgnoreCase) &&
          log.Contains("dotnet", StringComparison.OrdinalIgnoreCase));
 
-    private static string Clip(string text) => text.Length <= 12_000 ? text : text[..6_000] + "\n[truncated]\n" + text[^6_000:];
+    private static string Clip(string text) => text.Length <= 12_000 ? text : text[..6_000] + "\n[truncated]\n" + text[^6_000..];
 
     private static async Task<(string Status, string Log)> RunTestsAsync(
         string workspace, CommandRunner run, CancellationToken ct)
