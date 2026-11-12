@@ -61,6 +61,15 @@ public static class AgentValidation
         }
     }
 
+    // A successful review with any actionable text needs a visible fix state.
+    // Unstructured/legacy reviewer messages are treated conservatively.
+    public static bool HasActionableFindings(string? reviewStatus, string? reviewText)
+    {
+        if (reviewStatus != "reviewed" || string.IsNullOrWhiteSpace(reviewText)) return false;
+        var normalized = reviewText.Trim().TrimEnd('.');
+        return !string.Equals(normalized, "No actionable findings", StringComparison.OrdinalIgnoreCase);
+    }
+
     // Do not spend extra Codex calls trying to fix a broken test environment.
     public static bool IsInfrastructureFailure(string log) =>
         log.Contains("NuGet-Migrations", StringComparison.OrdinalIgnoreCase) ||

@@ -27,6 +27,8 @@ await using (var db = await app.Services.GetRequiredService<IDbContextFactory<Ag
             "Notes" text NOT NULL,
             "UpdatedAt" timestamp with time zone NOT NULL
         );
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "HasReviewFindings" boolean NOT NULL DEFAULT FALSE;
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "ReviewFixAttempts" integer NOT NULL DEFAULT 0;
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "CurrentStage" text NULL;
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "Participants" text NOT NULL DEFAULT '';
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "HasDesignerMetrics" boolean NOT NULL DEFAULT FALSE;

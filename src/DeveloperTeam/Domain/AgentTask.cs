@@ -37,6 +37,8 @@ public sealed class AgentTask
     public string? TestLog { get; set; }
     public string? ReviewStatus { get; set; }
     public string? ReviewLog { get; set; }
+    public bool HasReviewFindings { get; set; }
+    public int ReviewFixAttempts { get; set; }
     public bool HasDeveloperMetrics { get; set; }
     public bool HasReviewerMetrics { get; set; }
     public int? FixAttempts { get; set; }

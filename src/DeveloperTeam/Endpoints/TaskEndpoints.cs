@@ -16,7 +16,7 @@ public static class TaskEndpoints
         return Results.Ok(await db.Tasks.AsNoTracking()
             .OrderByDescending(x => x.CreatedAt)
             .Take(100)
-            .Select(x => new { x.Id, x.RepositoryUrl, x.BaseBranch, x.Prompt, x.Role, x.Participants, x.Status, x.CurrentStage, x.CreatedAt, x.StartedAt, x.FinishedAt, x.Error, x.CreatePullRequest, x.PullRequestUrl, x.TestStatus, x.ReviewStatus, x.HasDeveloperMetrics, x.HasDesignerMetrics, x.HasReviewerMetrics, x.DesignerInputTokens, x.DesignerCachedTokens, x.DesignerOutputTokens, x.DeveloperCachedTokens, x.ReviewerCachedTokens, x.DeveloperInputTokens, x.DeveloperOutputTokens, x.ReviewerInputTokens, x.ReviewerOutputTokens })
+            .Select(x => new { x.Id, x.RepositoryUrl, x.BaseBranch, x.Prompt, x.Role, x.Participants, x.Status, x.CurrentStage, x.CreatedAt, x.StartedAt, x.FinishedAt, x.Error, x.CreatePullRequest, x.PullRequestUrl, x.TestStatus, x.ReviewStatus, x.HasReviewFindings, x.ReviewFixAttempts, x.HasDeveloperMetrics, x.HasDesignerMetrics, x.HasReviewerMetrics, x.DesignerInputTokens, x.DesignerCachedTokens, x.DesignerOutputTokens, x.DeveloperCachedTokens, x.ReviewerCachedTokens, x.DeveloperInputTokens, x.DeveloperOutputTokens, x.ReviewerInputTokens, x.ReviewerOutputTokens })
             .ToListAsync());
     });
 
@@ -29,7 +29,7 @@ public static class TaskEndpoints
             task.Id, task.RepositoryUrl, task.BaseBranch, task.Prompt, task.Role, task.Participants, task.Status, task.CurrentStage, task.CreatedAt,
             task.StartedAt, task.FinishedAt, task.Error, task.WorkspacePath,
             task.CreatePullRequest, task.PullRequestUrl, task.PullRequestBranch,
-            task.TestStatus, task.ReviewStatus,
+            task.TestStatus, task.ReviewStatus, task.HasReviewFindings, task.ReviewFixAttempts,
             task.HasDeveloperMetrics, task.HasDesignerMetrics, task.HasReviewerMetrics,
             task.DesignerInputTokens, task.DesignerCachedTokens, task.DesignerOutputTokens,
             task.DeveloperInputTokens, task.DeveloperCachedTokens, task.DeveloperOutputTokens,
@@ -80,6 +80,23 @@ public static class TaskEndpoints
             .Select(t => new { t.TestStatus, t.TestLog, t.ReviewStatus, t.ReviewLog })
             .SingleOrDefaultAsync();
         return task is null ? Results.NotFound() : Results.Ok(task);
+    });
+
+    group.MapPost("/{id:guid}/fix-review", async (Guid id, IDbContextFactory<AgentDbContext> factory) =>
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        // Atomic claim prevents double clicks, concurrent workers, or re-reviewing a failed task.
+        var changed = await db.Tasks.Where(t => t.Id == id &&
+            t.Status == "completed" && t.ReviewStatus == "reviewed" && t.HasReviewFindings &&
+            t.ReviewFixAttempts < 3 && t.WorkspacePath != null && t.Diff != null && t.Diff != "" &&
+            t.PullRequestUrl != null && t.CreatePullRequest)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.Status, "review_fix_queued")
+                .SetProperty(t => t.Error, (string?)null));
+        if (changed == 1)
+            return Results.Accepted($"/api/tasks/{id}", new { id, status = "review_fix_queued" });
+        return await db.Tasks.AsNoTracking().AnyAsync(t => t.Id == id)
+            ? Results.Conflict(new { error = "Review repair requires a completed task with findings, an existing PR, and fewer than 3 attempts." })
+            : Results.NotFound();
     });
 
     group.MapPost("/{id:guid}/retry-publish", async (Guid id, IDbContextFactory<AgentDbContext> factory) =>
