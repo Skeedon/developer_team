@@ -127,9 +127,12 @@ async function loadTasks() {
         ? '<span class="check" style="color:#f4b977;border-color:#a8733c">⚠ Reviewer нашёл замечания' +
           (t.reviewFixAttempts ? ' · попыток: ' + Number(t.reviewFixAttempts) : '') + '</span>'
         : t.reviewStatus === 'reviewed' ? '<span class="check">✓ Reviewer: без замечаний</span>' : '';
-      const fixReviewButton = t.hasReviewFindings && t.pullRequestUrl &&
-        ['completed','review_fix_failed'].includes(t.status) && (t.reviewFixAttempts || 0) < 3
-        ? '<button class="action" data-id="' + id + '" data-kind="fix-review">Исправить замечания</button>' : '';
+      const repairEligible = t.pullRequestUrl && (
+        (t.hasReviewFindings && ['completed','review_fix_failed'].includes(t.status) && (t.reviewFixAttempts || 0) < 3) ||
+        (t.status === 'review_fix_failed' && !t.hasReviewFindings && t.reviewStatus === 'reviewed'));
+      const fixReviewButton = repairEligible
+        ? '<button class="action" data-id="' + id + '" data-kind="fix-review">' +
+          (t.hasReviewFindings ? 'Исправить замечания' : 'Повторить публикацию исправлений') + '</button>' : '';
       const checksLabel = '<div class="checks"><span class="check">Тесты: ' + escapeHtml(checkStatuses[t.testStatus] || t.testStatus || '—') +
         '</span><span class="check">Reviewer: ' + escapeHtml(checkStatuses[t.reviewStatus] || t.reviewStatus || '—') + '</span>' + reviewTag + '</div>';
       const tokens = '<p class="tokens">Токены · Dev: ' + (t.hasDeveloperMetrics ? escapeHtml(t.developerInputTokens.toLocaleString('ru-RU')) +

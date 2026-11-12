@@ -352,7 +352,9 @@ public sealed class AgentWorker(
         }
         try
         {
-            if (!task.HasReviewFindings || task.ReviewFixAttempts >= 3 ||
+            var publishOnly = !task.HasReviewFindings && task.ReviewStatus == "reviewed";
+            if ((!publishOnly && (!task.HasReviewFindings ||
+                    task.ReviewFixAttempts >= DeveloperTeam.Services.ReviewRepairPolicy.MaxAttempts)) ||
                 !Directory.Exists(Path.Combine(workspace, ".git")))
                 throw new InvalidOperationException("Review feedback or saved Git workspace is unavailable.");
             // Do not patch an already merged or closed PR.
@@ -360,6 +362,21 @@ public sealed class AgentWorker(
             var branch = await RunProcessAsync("git", ["branch", "--show-current"], workspace, token);
             if (branch.ExitCode != 0 || branch.Output.Trim() != "agent/" + id.ToString("N"))
                 throw new InvalidOperationException("Saved workspace branch does not match the original PR.");
+            if (publishOnly)
+            {
+                // Reviewer already cleared the findings. Only retry GitHub publication:
+                // do not execute a new paid Codex turn.
+                task.Status = "publishing";
+                task.CurrentStage = TaskProgress.Publication;
+                await db.SaveChangesAsync(token);
+                var retried = await publisher.PublishAsync(task, workspace, token);
+                task.PullRequestUrl = retried.Url;
+                task.PullRequestBranch = retried.Branch;
+                await TryPublishReportAsync(task, token);
+                transcript.AppendLine("\\nReview corrections published after retry: " + retried.Url);
+                task.Status = "completed";
+                return;
+            }
             var apiKey = config["OpenAI:ApiKey"];
             var model = config["OpenAI:Model"];
             if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(model))

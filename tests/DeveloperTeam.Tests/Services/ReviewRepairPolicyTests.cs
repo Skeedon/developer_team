@@ -50,4 +50,15 @@ public class ReviewRepairPolicyTests
         task.WorkspacePath = null;
         Assert.False(ReviewRepairPolicy.Eligible.Compile()(task));
     }
+    [Fact]
+    public void PublicationOnlyRetryNeedsNoNewModelTurnOrAttempt()
+    {
+        var task = Ready();
+        task.Status = "review_fix_failed";
+        task.HasReviewFindings = false;
+        task.ReviewFixAttempts = ReviewRepairPolicy.MaxAttempts;
+        Assert.True(ReviewRepairPolicy.Eligible.Compile()(task));
+        task.ReviewStatus = "failed";
+        Assert.False(ReviewRepairPolicy.Eligible.Compile()(task));
+    }
 }
