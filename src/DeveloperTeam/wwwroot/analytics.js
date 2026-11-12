@@ -19,19 +19,19 @@ async function load() {
       ['Неуспешных', number(t.failed)], ['Средняя длительность', t.averageDurationSeconds == null ? 'Нет данных' : number(Math.round(t.averageDurationSeconds)) + ' сек'],
       ['Попыток исправления', number(t.fixAttempts)], ['Задач с успешным исправлением', number(t.tasksHelpedByFixes)] ];
     $('cards').innerHTML = cards.map(([title,value]) => `<section class="card"><h2>${title}</h2><div class="value">${value}</div></section>`).join('');
-    $('roles').innerHTML = ['developer','reviewer'].map(role => `<tr><th>${role === 'developer' ? 'Developer' : 'Reviewer'}</th>${['Input','CachedInput','Output'].map(key => `<td>${number(t[role+key])}</td>`).join('')}<td>${number(t[role+'MeasuredTasks'])} / ${number(t.total)}</td></tr>`).join('');
+    $('roles').innerHTML = ['developer','designer','reviewer'].map(role => `<tr><th>${role === 'developer' ? 'Developer' : role === 'designer' ? 'Designer' : 'Reviewer'}</th>${['Input','CachedInput','Output'].map(key => `<td>${number(t[role+key])}</td>`).join('')}<td>${number(t[role+'MeasuredTasks'])} / ${number(t.total)}</td></tr>`).join('');
     $('coverage').textContent = `Счётчик исправлений есть у ${number(t.fixMeasuredTasks)} из ${number(t.total)} задач. Суммы включают только известные метрики; исторические данные не считаются нулевыми. Успех — completed; ошибки — failed и publish_failed. Средняя длительность — от старта до завершения, без очереди.`;
-    const max = Math.max(1,...daily.flatMap(d => [total(d,'developer') ?? 0,total(d,'reviewer') ?? 0]));
+    const max = Math.max(1,...daily.flatMap(d => [total(d,'developer') ?? 0,total(d,'designer') ?? 0,total(d,'reviewer') ?? 0]));
     $('chart').innerHTML = daily.length ? daily.map(d => {
       const date = d.date.slice(0,10);
       return `<div class="day"><div class="bars">${['developer','reviewer'].map(role => {
         const value = total(d,role);
         const label = `${date} ${role}: ${number(value)}`;
-        return value == null ? `<span title="${label}" aria-label="${label}">—</span>` : `<div class="bar ${role === 'developer' ? 'dev' : 'review'}" style="height:${value/max*140}px" title="${label}" aria-label="${label}"></div>`;
+        return value == null ? `<span title="${label}" aria-label="${label}">—</span>` : `<div class="bar ${role === 'developer' ? 'dev' : role === 'designer' ? 'designer' : 'review'}" style="height:${value/max*140}px" title="${label}" aria-label="${label}"></div>`;
       }).join('')}</div><time>${date}</time></div>`;
     }).join('') : '<p>Задач за период нет.</p>';
-    $('daily').innerHTML = daily.map(d => `<tr><td>${d.date.slice(0,10)}</td><td>${number(total(d,'developer'))}</td><td>${number(total(d,'reviewer'))}</td></tr>`).join('');
-    $('recent').innerHTML = recent.length ? recent.map(task => `<tr><td class="prompt"><strong>${escapeHtml(task.prompt)}</strong><p>${escapeHtml(task.repositoryUrl)}</p><small>${escapeHtml(task.createdAt)}<br>${escapeHtml(task.id)}</small></td><td>${escapeHtml(task.status)}</td><td class="tokens">${tokens(task,'developer')}</td><td class="tokens">${tokens(task,'reviewer')}</td><td>${escapeHtml(task.testStatus)}</td><td>${escapeHtml(task.reviewStatus)}</td><td>${number(task.fixAttempts)}</td></tr>`).join('') : '<tr><td colspan="7">Задач за период нет.</td></tr>';
+    $('daily').innerHTML = daily.map(d => `<tr><td>${d.date.slice(0,10)}</td><td>${number(total(d,'developer'))}</td><td>${number(total(d,'designer'))}</td><td>${number(total(d,'reviewer'))}</td></tr>`).join('');
+    $('recent').innerHTML = recent.length ? recent.map(task => `<tr><td class="prompt"><strong>${escapeHtml(task.prompt)}</strong><p>Участники: ${escapeHtml((task.participants || '').split(',').join(' · ') || 'Нет данных')}</p><p>${escapeHtml(task.repositoryUrl)}</p><small>${escapeHtml(task.createdAt)}<br>${escapeHtml(task.id)}</small></td><td>${escapeHtml(task.status)}</td><td class="tokens">${tokens(task,'developer')}</td><td class="tokens">${tokens(task,'designer')}</td><td class="tokens">${tokens(task,'reviewer')}</td><td>${escapeHtml(task.testStatus)}</td><td>${escapeHtml(task.reviewStatus)}</td><td>${number(task.fixAttempts)}</td></tr>`).join('') : '<tr><td colspan="8">Задач за период нет.</td></tr>';
     $('report').hidden = false;
     $('message').textContent = '';
   } catch(error) {
