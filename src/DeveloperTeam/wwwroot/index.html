@@ -76,6 +76,8 @@
           const id = encodeURIComponent(t.id);
           const downloadable = t.status === 'completed';
           const prLink = t.pullRequestUrl ? '<a class="action" target="_blank" rel="noopener noreferrer" href="' + escapeHtml(t.pullRequestUrl) + '">Открыть PR</a>' : '';
+          const retryButton = t.createPullRequest && ['failed','publish_failed'].includes(t.status) && !t.pullRequestUrl
+            ? '<button class="action" data-id="' + id + '" data-kind="retry">Повторить публикацию PR</button>' : '';
           const error = t.error ? '<p class="failed">' + escapeHtml(t.error) + '</p>' : '';
           return '<article class="task"><strong class="status ' + status + '">' + status + '</strong>' +
             '<p>' + escapeHtml(t.prompt) + '</p>' +
@@ -83,14 +85,24 @@
             escapeHtml(new Date(t.createdAt).toLocaleString('ru-RU')) + '</p>' + error +
             '<button class="action" data-id="' + id + '" data-kind="log">Лог</button>' +
             '<button class="action" data-id="' + id + '" data-kind="diff">Diff</button>' +
-            (downloadable ? '<a class="action" href="/api/tasks/' + id + '/download">Скачать ZIP</a>' : '') + prLink +
+            (downloadable ? '<a class="action" href="/api/tasks/' + id + '/download">Скачать ZIP</a>' : '') + prLink + retryButton +
             '</article>';
         }).join('');
       } catch (e) { root.textContent = 'Не удалось загрузить задачи: ' + e.message; }
     }
     root.addEventListener('click', e => {
       const btn = e.target.closest('button[data-id]');
-      if (btn) showText(btn.dataset.id, btn.dataset.kind);
+      if (!btn) return;
+      if (btn.dataset.kind === 'retry') {
+        btn.disabled = true;
+        fetch('/api/tasks/' + encodeURIComponent(btn.dataset.id) + '/retry-publish', {method:'POST'})
+          .then(async response => {
+            if (!response.ok) throw Error(await response.text());
+            message.textContent = 'Публикация поставлена в очередь. Codex повторно не запускается.';
+            await loadTasks();
+          })
+          .catch(err => { message.textContent = 'Ошибка: ' + err.message; btn.disabled = false; });
+      } else showText(btn.dataset.id, btn.dataset.kind);
     });
     document.querySelector('#refresh').addEventListener('click', loadTasks);
     document.querySelector('#form').addEventListener('submit', async e => {
