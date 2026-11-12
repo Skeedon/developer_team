@@ -1,0 +1,29 @@
+name: build
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - name: Restore
+        run: dotnet restore DeveloperTeam.sln
+      - name: Build
+        run: dotnet build DeveloperTeam.sln --no-restore -c Release
+      - name: Unit tests
+        run: dotnet test DeveloperTeam.sln --no-build -c Release --verbosity normal
+
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Dashboard contract tests
+        run: node --test tests/ui/dashboard.test.cjs

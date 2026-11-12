@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#101318">
+  <title>Задачи · Developer Team</title>
+  <link rel="stylesheet" href="/dashboard.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Перейти к содержимому</a>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Developer Team — главная"><span class="brand-mark" aria-hidden="true">&lt;/&gt;</span>Developer Team<span class="brand-tag">WORKSPACE</span></a>
+    <nav aria-label="Основная навигация"><a class="nav-link active" href="/" aria-current="page">Задачи</a><a class="nav-link" href="/analytics.html">Аналитика <span aria-hidden="true">↗</span></a></nav>
+    <span class="environment"><span class="dot"></span>Локальная среда</span>
+  </header>
+  <main id="main" class="workspace">
+    <div class="page-heading"><div><p class="eyebrow">УПРАВЛЕНИЕ ИИ-АГЕНТАМИ</p><h1>От идеи к pull request<span class="accent">.</span></h1><p class="intro">Поручите задачу команде. Следите за кодом, проверками и результатом.</p></div><span class="platform-label"><span class="platform-icon" aria-hidden="true">✳</span> Работает на OpenAI Codex</span></div>
+    <div class="dashboard-grid">
+      <section class="panel composer" aria-labelledby="new-task-title">
+        <div class="section-heading"><div><p class="eyebrow">СОЗДАНИЕ</p><h2 id="new-task-title">Новая задача</h2></div><span class="section-icon" aria-hidden="true">＋</span></div>
+        <form id="form">
+          <p class="field-hint" role="note"><strong>Исполнители назначаются автоматически.</strong> Developer отвечает за код, Designer — за интерфейс. Reviewer проверяет изменения.</p>
+          <fieldset><legend>02 <span>Настройте рабочее пространство</span></legend>
+            <label for="repo">GitHub-репозиторий <span class="optional">публичный</span></label>
+            <input id="repo" required type="url" value="https://github.com/Skeedon/developer_team" spellcheck="false" autocomplete="url">
+            <label for="baseBranch">Исходная ветка <span class="optional">необязательно</span></label>
+            <input id="baseBranch" value="feat/initial-agent-platform" placeholder="main" spellcheck="false" aria-describedby="branchHint">
+            <p id="branchHint" class="field-hint">Оставьте пустым, чтобы использовать ветку по умолчанию.</p>
+          </fieldset>
+          <fieldset><legend>03 <span>Опишите задачу</span></legend>
+            <label class="sr-only" for="prompt">Что нужно сделать?</label>
+            <textarea id="prompt" required maxlength="10000" placeholder="Добавь тесты к классу Calculator, запусти проверки и исправь ошибки…" aria-describedby="promptHint"></textarea>
+            <div class="input-footer"><span id="promptHint">Результат начинается с чёткого задания</span><span id="promptCount">0 / 10 000</span></div>
+          </fieldset>
+          <label class="pr-option"><input type="checkbox" id="pr" checked><span><strong>Создать Draft Pull Request</strong><small>Изменения будут готовы к проверке в GitHub</small></span></label>
+          <div class="image-option">
+            <label class="pr-option" for="images"><input type="checkbox" id="images"><span><strong>Разрешить генерацию изображений</strong><small>По умолчанию выключено. Designer сначала пробует CSS/SVG, затем дешёвый черновик → vision-проверка → финал только при успехе.</small></span></label>
+            <div id="imageSettings" hidden>
+              <label for="imageBudget">Бюджет изображений (USD, приблизительное резервирование)</label>
+              <input id="imageBudget" type="number" min="0.05" max="2" step="0.05" value="0.35" inputmode="decimal">
+              <p class="field-hint">Максимум 1 изображение, 2 недорогих черновика, 1 финал высокого качества. Фактическое списание API может отличаться от оценки. Файлы и токены учитываются отдельно.</p>
+            </div>
+          </div>
+          <button id="submit" class="primary-button" type="submit">Отправить задачу <span aria-hidden="true">↗</span></button>
+          <button id="showMemory" class="memory-button" type="button"><span aria-hidden="true">⌘</span> Память Reviewer <span aria-hidden="true">↗</span></button>
+          <p id="message" class="message" role="status"></p>
+        </form>
+      </section>
+      <section class="task-column" aria-labelledby="tasks-title">
+        <div class="section-heading task-list-heading"><div><p class="eyebrow">РАБОЧИЙ ПРОЦЕСС</p><h2 id="tasks-title">Задачи команды <span id="taskCount" class="count">—</span></h2></div><button id="refresh" class="action refresh-button" type="button"><span aria-hidden="true">↻</span> Обновить</button></div>
+        <div class="summary" aria-label="Сводка задач"><div><span class="summary-label"><span class="dot blue"></span>В работе</span><strong id="activeCount">—</strong></div><div><span class="summary-label"><span class="dot"></span>Завершено</span><strong id="completedCount">—</strong></div><div><span class="summary-label"><span class="dot red"></span>С ошибкой</span><strong id="failedCount">—</strong></div></div>
+        <p class="list-note">Последние задачи <span>Автообновление каждые 5 с</span></p>
+        <div id="tasks" aria-live="polite"><div class="empty-state"><span class="empty-icon" aria-hidden="true">↻</span><h3>Загружаем задачи</h3><p>Получаем актуальное состояние команды…</p></div></div>
+      </section>
+    </div>
+    <section class="panel details-panel" id="details" hidden aria-labelledby="details-title"><div class="section-heading"><h2 id="details-title" tabindex="-1">Результат</h2><button id="closeDetails" class="action" type="button" aria-label="Закрыть результат">Закрыть ×</button></div><pre id="details-content"></pre><div id="image-details" hidden></div></section>
+    <footer>Developer Team <span>Код. Проверки. Результат.</span></footer>
+  </main>
+  <script src="/dashboard.js"></script>
+</body>
+</html>

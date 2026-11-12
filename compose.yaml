@@ -1,0 +1,60 @@
+name: developer-team
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: developer_team
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: PostgresPasswordPollo
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+    - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent -d developer_team"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+  api:
+    build:
+      context: .
+      dockerfile: src/DeveloperTeam/Dockerfile
+    restart: unless-stopped
+    environment:
+      APP_ROLE: api
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=developer_team;Username=agent;Password=PostgresPasswordPollo"
+      ASPNETCORE_URLS: http://0.0.0.0:8080
+    volumes:
+      - agent_workspaces:/workspaces:ro
+    ports:
+      - "127.0.0.1:5088:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+  worker:
+    build:
+      context: .
+      dockerfile: src/DeveloperTeam/Dockerfile
+    restart: unless-stopped
+    environment:
+      APP_ROLE: worker
+      CODEX_HOME: /tmp/codex-home
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=developer_team;Username=agent;Password=PostgresPasswordPollo"
+    volumes:
+      - agent_workspaces:/workspaces
+      - ./config/appsettings.Local.json:/app/appsettings.Local.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    pids_limit: 256
+    mem_limit: 3g
+    cpus: 2
+volumes:
+  postgres_data:
+  agent_workspaces:
