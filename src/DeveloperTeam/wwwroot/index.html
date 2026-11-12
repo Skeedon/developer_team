@@ -34,7 +34,8 @@
       <label for="prompt">Что нужно сделать?</label>
       <textarea id="prompt" required maxlength="10000" placeholder="Добавь тесты к классу Calculator, запусти проверки и исправь ошибки…"></textarea>
       <p><label><input type="checkbox" id="pr" checked style="width:auto;margin-right:8px">Создать Draft Pull Request в GitHub</label></p>
-      <p><button id="submit" type="submit">Отправить задачу</button></p>
+      <p><button id="submit" type="submit">Отправить задачу</button>
+      <button id="showMemory" class="action" type="button">Память Reviewer</button></p>
       <p id="message" class="muted" role="status"></p>
     </form>
   </section>
@@ -72,6 +73,17 @@
       } catch (e) { message.textContent = e.message; }
     }
     window.showTaskText = showText;
+    document.querySelector('#showMemory').addEventListener('click', async () => {
+      try {
+        const repo = document.querySelector('#repo').value;
+        const response = await read('/api/tasks/reviewer-memory?repositoryUrl=' + encodeURIComponent(repo));
+        const memory = await response.json();
+        document.querySelector('#details-title').textContent = 'Память Reviewer · ' + repo;
+        content.textContent = memory.notes || 'Пока пусто. Reviewer заполнит память после первого успешного ревью.';
+        details.hidden = false;
+        details.scrollIntoView({behavior:'smooth'});
+      } catch (e) { message.textContent = 'Ошибка памяти: ' + e.message; }
+    });
     async function loadTasks() {
       try {
         const tasks = await (await read('/api/tasks')).json();

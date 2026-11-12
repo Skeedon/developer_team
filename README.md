@@ -75,6 +75,30 @@ message instead of exposing raw Codex JSON lifecycle events.
 Tests execute in the same worker container as the coding agent; run **trusted repositories only**.
 Future improvements should use disposable sandboxed runners with credentials isolated.
 
+## Persistent Reviewer knowledge and token accounting
+
+Reviewer uses the same configured Codex model as before (`OpenAI:ReviewerModel`,
+falling back to `OpenAI:Model`). No model downgrade or automatic price assumptions.
+
+On each task, it receives a bounded (4,000-character) summary of repository
+architecture, invariants and recurring review concerns. It returns both its findings
+and an updated summary in its final answer. The worker stores the updated notes
+in the PostgreSQL `ReviewerMemories` table, keyed by normalized GitHub
+repository URL. Notes are separate from the Git workspaces, so they survive
+worker rebuilds and are never committed into a PR. Existing notes are considered
+untrusted hints and must be verified against the current code. A failed review
+or legacy unstructured response does not overwrite memory. Memory begins empty;
+previous tasks cannot be retroactively summarized without rerunning an agent.
+Inspect notes from the dashboard's **Память Reviewer** button or
+`GET /api/tasks/reviewer-memory?repositoryUrl=https://github.com/OWNER/REPO`.
+
+Codex usage events are now counted per task as Developer/Reviewer input, cached
+input, and output tokens (including Developer repair attempts). These counts
+appear in the dashboard; existing tasks show zero because historic usage was
+not persisted. Token totals are not USD cost: actual billing depends on your
+model pricing and cache rates. Providing memory adds a small amount of context
+per review, so **reduced cost is not guaranteed**.
+
 ## GitHub draft PR publishing
 
 Add `GitHub:Token` to ignored `config/appsettings.Local.json`. Create a fine-grained GitHub PAT restricted to your target repository with **Contents: Read and write** and **Pull requests: Read and write** permissions.
