@@ -55,6 +55,20 @@ public static class TaskEndpoints
         return task is null ? Results.NotFound() : Results.Text(task.InitialDiff ?? "", "text/plain");
     });
 
+    group.MapGet("/reviewer-memory", async (string repositoryUrl,
+        IDbContextFactory<AgentDbContext> factory) =>
+    {
+        if (!RepositoryUrl.IsValid(repositoryUrl))
+            return Results.BadRequest(new { error = "Invalid repository URL." });
+        await using var db = await factory.CreateDbContextAsync();
+        var key = DeveloperTeam.Services.ReviewerMemoryKey.FromUrl(repositoryUrl);
+        var memory = await db.ReviewerMemories.AsNoTracking()
+            .Where(x => x.RepositoryKey == key)
+            .Select(x => new { x.Notes, x.UpdatedAt }).SingleOrDefaultAsync();
+        return memory is null ? Results.Ok(new { notes = "", updatedAt = (DateTime?)null })
+            : Results.Ok(new { notes = memory.Notes, updatedAt = (DateTime?)memory.UpdatedAt });
+    });
+
     group.MapGet("/{id:guid}/checks", async (Guid id, IDbContextFactory<AgentDbContext> factory) =>
     {
         await using var db = await factory.CreateDbContextAsync();

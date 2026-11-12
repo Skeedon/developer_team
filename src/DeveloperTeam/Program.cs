@@ -22,6 +22,11 @@ await using (var db = await app.Services.GetRequiredService<IDbContextFactory<Ag
 {
     await db.Database.EnsureCreatedAsync();
     await db.Database.ExecuteSqlRawAsync("""
+        CREATE TABLE IF NOT EXISTS "ReviewerMemories" (
+            "RepositoryKey" text PRIMARY KEY,
+            "Notes" text NOT NULL,
+            "UpdatedAt" timestamp with time zone NOT NULL
+        );
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "InitialDiff" text NULL;
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "TestStatus" text NULL;
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "TestLog" text NULL;

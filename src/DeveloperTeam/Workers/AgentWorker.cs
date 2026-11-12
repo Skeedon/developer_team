@@ -126,6 +126,9 @@ public sealed class AgentWorker(
 
             // Independent checks are run after Codex finishes, before GitHub publication.
             // Test failures do not hide the diff: the PR remains a draft with explicit results.
+            var previousReviewMemory = await db.ReviewerMemories.AsNoTracking()
+                .Where(m => m.RepositoryKey == DeveloperTeam.Services.ReviewerMemoryKey.FromUrl(task.RepositoryUrl))
+                .Select(m => m.Notes).SingleOrDefaultAsync(token);
             var validation = await DeveloperTeam.Services.AgentValidation.RunAsync(
                 workspace, config, RunProcessAsync, token,
                 async (attempt, error, ct) =>
@@ -158,7 +161,27 @@ public sealed class AgentWorker(
                     var index = await RunProcessAsync("git", ["add", "-N", "."], workspace, ct);
                     if (index.ExitCode != 0)
                         throw new InvalidOperationException("Unable to register final files for review: " + index.Output);
-                });
+                },
+                previousReviewMemory);
+            if (validation.ReviewStatus == "reviewed" &&
+                !string.IsNullOrWhiteSpace(validation.UpdatedReviewMemory))
+            {
+                var repoKey = DeveloperTeam.Services.ReviewerMemoryKey.FromUrl(task.RepositoryUrl);
+                var existing = await db.ReviewerMemories.SingleOrDefaultAsync(m => m.RepositoryKey == repoKey, token);
+                if (existing is null)
+                    db.ReviewerMemories.Add(new DeveloperTeam.Domain.ReviewerMemory
+                    {
+                        RepositoryKey = repoKey,
+                        Notes = validation.UpdatedReviewMemory,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                else
+                {
+                    existing.Notes = validation.UpdatedReviewMemory;
+                    existing.UpdatedAt = DateTime.UtcNow;
+                }
+                await db.SaveChangesAsync(token);
+            }
             // Capture all fixes against the original HEAD before the single publication step.
             var finalIndex = await RunProcessAsync("git", ["add", "-N", "."], workspace, token);
             var finalDiff = await RunProcessAsync("git", ["diff", "--no-ext-diff", "--binary", "HEAD"], workspace, token);
