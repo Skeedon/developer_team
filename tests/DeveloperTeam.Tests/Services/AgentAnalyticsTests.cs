@@ -67,6 +67,30 @@ public class AgentAnalyticsTests
     }
 
     [Fact]
+    public void DesignerTokensAreIndependentFromDeveloperAndReviewer()
+    {
+        var tasks = new[]
+        {
+            new AgentTask { CreatedAt = Now, Participants = "designer,developer,reviewer",
+                HasDesignerMetrics = true, DesignerInputTokens = 140, DesignerCachedTokens = 90, DesignerOutputTokens = 12,
+                HasDeveloperMetrics = true, DeveloperInputTokens = 220, DeveloperCachedTokens = 150, DeveloperOutputTokens = 21,
+                HasReviewerMetrics = true, ReviewerInputTokens = 80, ReviewerCachedTokens = 40, ReviewerOutputTokens = 5 },
+            new AgentTask { CreatedAt = Now, Participants = "developer,reviewer",
+                HasDeveloperMetrics = true, DeveloperInputTokens = 10, DeveloperOutputTokens = 2 }
+        }.AsQueryable();
+        var totals = AgentAnalytics.Totals(tasks).Single();
+        Assert.Equal(1, totals.DesignerMeasuredTasks);
+        Assert.Equal(140L, totals.DesignerInput);
+        Assert.Equal(90L, totals.DesignerCachedInput);
+        Assert.Equal(12L, totals.DesignerOutput);
+        Assert.Equal(230L, totals.DeveloperInput);
+        Assert.Equal(80L, totals.ReviewerInput);
+        var daily = AgentAnalytics.Daily(tasks).Single();
+        Assert.Equal(140L, daily.DesignerInput);
+        Assert.Equal(12L, daily.DesignerOutput);
+    }
+
+    [Fact]
     public void HistoricalMetricsStayUnknownAndMeasuredZerosStayZero()
     {
         var legacy = new AgentTask { CreatedAt = Now.AddDays(-1) };
