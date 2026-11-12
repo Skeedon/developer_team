@@ -32,11 +32,32 @@ PostgreSQL data location: named Docker volume `postgres_data`, mounted under `/v
 
 The worker uses the built-in OpenAI provider and `https://api.openai.com/v1`. Model `gpt-6.1-sol` is an example; verify that your API account can access it, otherwise change `OpenAI:Model`. Billing uses your OpenAI Platform API credits, not ChatGPT subscription usage. Restart the worker after editing the local JSON file.
 
+## Automated tests and independent Reviewer
+
+After Codex edits the repository, the worker executes a bounded `dotnet test` run
+when it detects a .NET test project. A root `.sln` or `.slnx` is used when available;
+otherwise, each detected test project runs separately. For other stacks or absent
+test projects, the result is `not_configured`; **no green test result is claimed**.
+Timeout: 6 minutes.
+
+A second, read-only `codex exec` run independently reviews the diff relative to HEAD,
+looking for bugs, security problems, regressions and missing validation/tests.
+Its output and test results are stored in PostgreSQL and accessible via
+`GET /api/tasks/{id}/checks` and the dashboard's **Проверки** button.
+The worker adds an informational comment to any newly created Draft PR.
+Findings do not auto-merge or silently reject the PR; a human still decides.
+The Reviewer uses `OpenAI:ReviewerModel` when specified; otherwise `OpenAI:Model`.
+This second model invocation **consumes additional API tokens**.
+
+The worker image now includes the .NET 9 SDK to run real tests; it is heavier.
+Tests execute in the same worker container as the coding agent; run **trusted repositories only**.
+Future improvements should use disposable sandboxed runners with credentials isolated.
+
 ## GitHub draft PR publishing
 
 Add `GitHub:Token` to ignored `config/appsettings.Local.json`. Create a fine-grained GitHub PAT restricted to your target repository with **Contents: Read and write** and **Pull requests: Read and write** permissions.
 
-The dashboard lets you provide an optional source branch. The worker clones this branch and uses it as the base of the draft PR; leaving it empty uses the repository default branch. The dashboard lets you choose whether to create a draft PR. The worker commits changes in a new `agent/<task-id>` branch, pushes to the specified GitHub repository, and opens a **draft** PR against the default branch. The system does not merge PRs. A task with no changes will fail PR publication instead of creating an empty PR.
+The dashboard lets you provide an optional source branch. The worker clones this branch and uses it as the base of the draft PR; leaving it empty uses the repository default branch. The dashboard lets you choose whether to create a draft PR. The worker commits changes in a new `agent/<task-id>` branch, pushes to the specified GitHub repository, and opens a **draft** PR against the selected source branch. The system does not merge PRs. A task with no changes will fail PR publication instead of creating an empty PR.
 
 **Security:** This MVP runs Codex in the same container as the credential-bearing worker. An untrusted repository could attempt to access the local secret file. Use only repositories you control, restrict the token to those repositories, and keep the API localhost-only. Hardened separation is required before untrusted or multi-user workloads.
 
