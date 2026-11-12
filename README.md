@@ -40,9 +40,9 @@ The task form lets you choose between **Developer** (default) and **Designer**.
 Both use the existing configured Codex model, sandboxed workspace, automatic
 .NET tests when applicable, independent Reviewer, and optional GitHub Draft PR.
 Designer specializes in UI/UX, component composition, styling, responsive layout,
-accessibility and lightweight CSS animations. It edits frontend source code, not
-image files. Image generation is **not** connected: choosing Designer makes no
-image-generation API calls or image charges.
+accessibility and lightweight CSS animations. By default, it edits only frontend
+source code. Raster image generation is an **explicit, optional paid task setting**,
+disabled unless the task creator checks "Разрешить генерацию изображений".
 
 The role is stored on each task in PostgreSQL and exposed through the task API.
 Older clients and tasks default to Developer. API callers can specify
@@ -71,10 +71,10 @@ Analytics includes all three roles. Previously recorded Designer-only tasks are
 migrated from the old Developer token columns exactly once, while old tasks with
 missing usage remain marked as unknown.
 
-**No automatic image generation is included.** Designer implements UI directly
-in code with the same model configuration as Developer. No extra model call is
-made solely to assign agents. Mixed tasks may cost more because two coding turns
-are executed; the existing automatic fix/review flow is shared, not duplicated.
+Image generation stays **disabled by default**. Designer implements UI directly
+in code whenever CSS/SVG can satisfy the task. No extra model call is made solely
+to assign agents. Mixed tasks may cost more because two coding turns are
+executed; the existing automatic fix/review flow is shared, not duplicated.
 
 ## Repository context and explicit Reviewer repairs
 
@@ -107,6 +107,71 @@ without another Codex call. All corrections require an intact `agent_workspaces`
 volume and an open GitHub PR. Closed or merged PRs are rejected, and the worker
 never pushes changes directly to `main`. No change to the model or automatic
 image generation is included.
+
+## Optional low-cost image drafts, visual review, and final assets
+
+The task composer includes **Разрешить генерацию изображений** (unchecked by
+default) and an approximate image budget, initially **$0.35**. Enabling it
+explicitly requests paid image work and requires a Draft PR. If not enabled,
+the platform makes **zero image generation or image evaluator API requests**.
+
+When opted in, Designer is included in the execution team. Designer normally
+chooses CSS/SVG or existing assets; it creates a root-level
+`developer-team.assets.json` **only if a raster asset is necessary**:
+
+```json
+{
+  "assets": [{
+    "path": "public/assets/garage.png",
+    "prompt": "Detailed description of a single visual scene including composition, style and exclusions.",
+    "criteria": ["Important subject visible", "Correct game art perspective"],
+    "size": "1024x1024",
+    "transparent": false
+  }]
+}
+```
+
+Supported paths begin with `public/assets/`, `wwwroot/assets/`, or
+`assets/` and end in `.png`. Paths are validated against traversal,
+symlinks, secret-like names, and preexisting files. One raster asset per
+task, at most two draft attempts, and one final attempt. The temporary
+manifest is removed before Git publication.
+
+The worker uses the **Images API** with `gpt-image-2`, quality `low`
+for draft generation. An independent `gpt-4.1-mini` vision evaluation
+compares the actual rendered draft with the brief and checklist, requiring
+an explicit pass and score of at least **0.80**. Rejected drafts are
+regenerated only at low quality. If both fail, the task fails safely
+without making any high-quality image request.
+
+A passing draft becomes a base64 data-URL **reference image** for the final
+`gpt-image-2` Images Edit API call with `quality=high`. The final PNG
+is written to the declared asset path in the repository and is included
+in the usual Draft PR. Designer and Developer can reference its path;
+the independent code Reviewer still runs afterward. This approach
+**does not guarantee pixel-perfect consistency** between draft and final,
+and final image quality still needs human inspection.
+
+Images are stored in the existing task workspace Docker volume, not in
+PostgreSQL. Draft images are kept under `.git/developer-team-image-drafts/`
+so they are available for preview but not committed. The dashboard shows
+the current image stage, generation attempts, vision assessment, preview
+images, image/evaluator token counts and **conservative USD reservations**.
+API routes: `GET /api/tasks/{id}/images` and
+`GET /api/tasks/{id}/images/{assetId}/draft|final`.
+
+**Cost controls and limitations:** the worker reserves estimated spending
+before every image or vision call and blocks calls that would exceed the
+task's specified budget. Defaults use $0.015 per draft, $0.012 per
+vision evaluation, and $0.230–0.270 per high-quality final depending
+on orientation. These are **budget allowances, not measured OpenAI charges**;
+the actual invoice depends on model token usage and the provider's current
+pricing, and failed requests may still incur charges. The default maximum
+does not apply to the existing Codex text/reviewer usage. Model IDs are
+intentionally fixed to the priced, tested configuration; unsupported
+`Images:*Model` overrides fail before image calls. Images may also require
+API organization verification. For a first test, enable images for **one
+small, noncritical asset** in a trusted test repository.
 
 ## Automated tests and independent Reviewer
 

@@ -27,7 +27,10 @@ public static class ImageAssetManifest
             var size = item.TryGetProperty("size", out var s) ? s.GetString() ?? "" : "1024x1024";
             var transparent = item.TryGetProperty("transparent", out var tr) && tr.ValueKind == JsonValueKind.True;
             if (!AllowedPath.IsMatch(path) || path.Contains("..", StringComparison.Ordinal) ||
-                path.Split('/').Any(x => x is "." or "..") ||
+                path.Split('/').Any(x => x is "." or ".." || x.StartsWith('.') ||
+                    x.Equals("node_modules", StringComparison.OrdinalIgnoreCase) ||
+                    x.Contains("secret", StringComparison.OrdinalIgnoreCase) ||
+                    x.Contains("credential", StringComparison.OrdinalIgnoreCase)) ||
                 path.Contains("//", StringComparison.Ordinal) ||
                 !new[] { "1024x1024", "1536x1024", "1024x1536" }.Contains(size) ||
                 prompt.Length is < 20 or > 3000)
@@ -57,7 +60,8 @@ public static class ImageAssetManifest
             if (cursor.LinkTarget is not null) throw new InvalidOperationException("Symbolic-link output paths are forbidden.");
             cursor = cursor.Parent!;
         }
-        if (File.Exists(full) && (File.GetAttributes(full) & FileAttributes.ReparsePoint) != 0)
+        if (new FileInfo(full).LinkTarget is not null ||
+            (File.Exists(full) && (File.GetAttributes(full) & FileAttributes.ReparsePoint) != 0))
             throw new InvalidOperationException("Symbolic-link asset files are forbidden.");
         return full;
     }
