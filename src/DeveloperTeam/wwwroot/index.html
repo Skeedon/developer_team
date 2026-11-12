@@ -12,6 +12,7 @@
     label{display:block;font-size:13px;font-weight:650;margin:15px 0 7px}
     input,textarea{width:100%;border:1px solid #465063;background:#121820;color:inherit;border-radius:8px;padding:12px;font:inherit}
     textarea{min-height:110px;resize:vertical}
+    select{width:100%;border:1px solid #465063;background:#121820;color:inherit;border-radius:8px;padding:12px;font:inherit}
     button,.action{display:inline-block;background:#2978df;border:0;border-radius:8px;color:white;padding:10px 15px;cursor:pointer;font:inherit;text-decoration:none}
     button:disabled{opacity:.55;cursor:wait}
     .action{background:#303f57;margin:4px 6px 4px 0;font-size:13px}
@@ -32,6 +33,12 @@
       <input id="repo" required type="url" value="https://github.com/Skeedon/developer_team">
       <label for="baseBranch">Исходная ветка (пусто = main/default)</label>
       <input id="baseBranch" value="feat/initial-agent-platform" placeholder="main">
+      <label for="agentRole">Кому поручить задачу?</label>
+      <select id="agentRole">
+        <option value="developer">💻 Developer — код и функциональность</option>
+        <option value="designer">🎨 Designer — UI/UX, стили, адаптивность</option>
+      </select>
+      <p id="roleHint" class="muted">Developer работает над логикой и функциональностью проекта.</p>
       <label for="prompt">Что нужно сделать?</label>
       <textarea id="prompt" required maxlength="10000" placeholder="Добавь тесты к классу Calculator, запусти проверки и исправь ошибки…"></textarea>
       <p><label><input type="checkbox" id="pr" checked style="width:auto;margin-right:8px">Создать Draft Pull Request в GitHub</label></p>
@@ -73,6 +80,14 @@
         details.scrollIntoView({behavior:'smooth'});
       } catch (e) { message.textContent = e.message; }
     }
+    document.querySelector('#agentRole').addEventListener('change', e => {
+      document.querySelector('#roleHint').textContent = e.target.value === 'designer'
+        ? 'Designer меняет код интерфейса: компоненты, CSS, layout и анимации. Генерации изображений пока нет.'
+        : 'Developer работает над логикой и функциональностью проекта.';
+      document.querySelector('#prompt').placeholder = e.target.value === 'designer'
+        ? 'Улучши дизайн главной страницы: отступы, типографика, адаптивность, состояния кнопок…'
+        : 'Добавь тесты к классу Calculator, запусти проверки и исправь ошибки…';
+    });
     window.showTaskText = showText;
     document.querySelector('#showMemory').addEventListener('click', async () => {
       try {
@@ -104,7 +119,7 @@
             '/' + escapeHtml(t.reviewerOutputTokens.toLocaleString('ru-RU')) : 'Нет данных') + ' (вход/выход)</span>';
           const error = t.error ? '<p class="failed">' + escapeHtml(t.error) + '</p>' : '';
           return '<article class="task"><strong class="status ' + status + '">' + status + '</strong>' +
-            '<p>' + escapeHtml(t.prompt) + '</p>' + '<p>' + checksLabel + '</p>' +
+            '<p><strong>' + (t.role === 'designer' ? '🎨 Designer' : '💻 Developer') + '</strong> · ' + escapeHtml(t.prompt) + '</p>' + '<p>' + checksLabel + '</p>' +
             '<p class="muted">' + escapeHtml(t.repositoryUrl) + ' · ' + escapeHtml(t.baseBranch || 'default') + ' · ' +
             escapeHtml(new Date(t.createdAt).toLocaleString('ru-RU')) + '</p>' + error +
             '<button class="action" data-id="' + id + '" data-kind="log">Лог</button>' +
@@ -139,6 +154,7 @@
           method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({repositoryUrl:document.querySelector('#repo').value,
             prompt:document.querySelector('#prompt').value,
+            role:document.querySelector('#agentRole').value,
             baseBranch:document.querySelector('#baseBranch').value.trim() || null,
             createPullRequest:document.querySelector('#pr').checked})
         });

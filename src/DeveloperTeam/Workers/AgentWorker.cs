@@ -106,9 +106,7 @@ public sealed class AgentWorker(
             // No host Docker socket or Git push credentials provided to this runner.
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
             timeout.CancelAfter(TimeSpan.FromMinutes(config.GetValue<int?>("Worker:TaskTimeoutMinutes") ?? 20));
-            var prompt = "You are a coding agent. Work only inside this repository. " +
-                "Implement the requested change, run relevant checks when possible, and do not push or publish anything. " +
-                "Do not read secrets or attempt to access files outside this workspace. Task: " + task.Prompt;
+            var prompt = DeveloperTeam.Services.AgentRoleInstructions.BuildPrompt(task.Role, task.Prompt);
             async Task<string> DevelopAsync(string instruction, CancellationToken ct)
             {
                 var result = await RunProcessAsync("codex",

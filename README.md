@@ -34,6 +34,23 @@ PostgreSQL data location: named Docker volume `postgres_data`, mounted under `/v
 
 The worker uses the built-in OpenAI provider and `https://api.openai.com/v1`. Model `gpt-6.1-sol` is an example; verify that your API account can access it, otherwise change `OpenAI:Model`. Billing uses your OpenAI Platform API credits, not ChatGPT subscription usage. Restart the worker after editing the local JSON file.
 
+## Developer and Designer roles
+
+The task form lets you choose between **Developer** (default) and **Designer**.
+Both use the existing configured Codex model, sandboxed workspace, automatic
+.NET tests when applicable, independent Reviewer, and optional GitHub Draft PR.
+Designer specializes in UI/UX, component composition, styling, responsive layout,
+accessibility and lightweight CSS animations. It edits frontend source code, not
+image files. Image generation is **not** connected: choosing Designer makes no
+image-generation API calls or image charges.
+
+The role is stored on each task in PostgreSQL and exposed through the task API.
+Older clients and tasks default to Developer. API callers can specify
+`"role":"designer"` (or `"role":"developer"`) in POST /api/tasks. Designer uses
+the same Codex model as Developer; this changes the role instructions, not the model.
+No visual screenshot-based verification is integrated yet, so the user should
+inspect the Draft PR's frontend changes before merging.
+
 ## Automated tests and independent Reviewer
 
 After Codex edits the repository, the worker executes a bounded `dotnet test` run

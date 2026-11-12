@@ -5,6 +5,7 @@ public sealed class AgentTask
     public Guid Id { get; set; }
     public string RepositoryUrl { get; set; } = "";
     public string Prompt { get; set; } = "";
+    public string Role { get; set; } = "developer";
     public string? BaseBranch { get; set; }
     public string Status { get; set; } = "";
     public DateTime CreatedAt { get; set; }
