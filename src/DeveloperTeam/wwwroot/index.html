@@ -34,6 +34,14 @@
             <div class="input-footer"><span id="promptHint">Результат начинается с чёткого задания</span><span id="promptCount">0 / 10 000</span></div>
           </fieldset>
           <label class="pr-option"><input type="checkbox" id="pr" checked><span><strong>Создать Draft Pull Request</strong><small>Изменения будут готовы к проверке в GitHub</small></span></label>
+          <div class="image-option">
+            <label class="pr-option" for="images"><input type="checkbox" id="images"><span><strong>Разрешить генерацию изображений</strong><small>По умолчанию выключено. Designer сначала пробует CSS/SVG, затем дешёвый черновик → vision-проверка → финал только при успехе.</small></span></label>
+            <div id="imageSettings" hidden>
+              <label for="imageBudget">Бюджет изображений (USD, приблизительное резервирование)</label>
+              <input id="imageBudget" type="number" min="0.05" max="2" step="0.05" value="0.35" inputmode="decimal">
+              <p class="field-hint">Максимум 1 изображение, 2 недорогих черновика, 1 финал высокого качества. Фактическое списание API может отличаться от оценки. Файлы и токены учитываются отдельно.</p>
+            </div>
+          </div>
           <button id="submit" class="primary-button" type="submit">Отправить задачу <span aria-hidden="true">↗</span></button>
           <button id="showMemory" class="memory-button" type="button"><span aria-hidden="true">⌘</span> Память Reviewer <span aria-hidden="true">↗</span></button>
           <p id="message" class="message" role="status"></p>
@@ -46,7 +54,7 @@
         <div id="tasks" aria-live="polite"><div class="empty-state"><span class="empty-icon" aria-hidden="true">↻</span><h3>Загружаем задачи</h3><p>Получаем актуальное состояние команды…</p></div></div>
       </section>
     </div>
-    <section class="panel details-panel" id="details" hidden aria-labelledby="details-title"><div class="section-heading"><h2 id="details-title" tabindex="-1">Результат</h2><button id="closeDetails" class="action" type="button" aria-label="Закрыть результат">Закрыть ×</button></div><pre id="details-content"></pre></section>
+    <section class="panel details-panel" id="details" hidden aria-labelledby="details-title"><div class="section-heading"><h2 id="details-title" tabindex="-1">Результат</h2><button id="closeDetails" class="action" type="button" aria-label="Закрыть результат">Закрыть ×</button></div><pre id="details-content"></pre><div id="image-details" hidden></div></section>
     <footer>Developer Team <span>Код. Проверки. Результат.</span></footer>
   </main>
   <script src="/dashboard.js"></script>

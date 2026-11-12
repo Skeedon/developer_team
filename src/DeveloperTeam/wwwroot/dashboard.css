@@ -203,3 +203,13 @@ h1{letter-spacing:-.8px}
 .step-label{padding:0}
 .task-header{align-items:flex-start}
 }
+
+.image-option{border-top:1px solid var(--border);padding-top:16px;margin-bottom:20px}
+#imageSettings{margin:0 0 14px 24px}
+#imageBudget{max-width:140px;padding:9px 10px;border-radius:8px;border:1px solid #46506a;background:#111720;color:#e9edf3}
+#image-details[hidden],#details-content[hidden],#imageSettings[hidden]{display:none}
+.image-asset{padding:12px 0;border-bottom:1px solid var(--border)}
+.image-asset h3{font-size:14px;overflow-wrap:anywhere}
+.image-asset pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#aab5c8}
+.image-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px}
+.image-grid img{max-width:100%;height:auto;border-radius:10px;border:1px solid #384456;display:block;margin-top:8px}

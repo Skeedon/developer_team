@@ -20,6 +20,8 @@ function setup(tasks = []) {
     return elements.get(selector);
   }
   element('input[name=agentRole]:checked').value = 'developer';
+  element('#images').checked = false;
+  element('#imageBudget').value = '0.35';
   const document = {querySelector:element,querySelectorAll:() => [element('developer'), element('designer')]};
   const context = vm.createContext({document,window:{},matchMedia:() => ({matches:true}),setInterval(){},
     fetch: async (url, options) => {
@@ -33,7 +35,7 @@ function setup(tasks = []) {
 const task = {id:'abc',status:'completed',role:'designer',prompt:'<script>alert(1)</script>',repositoryUrl:'https://github.com/team/repo',baseBranch:'main',createdAt:'2026-11-12T10:00:00Z',testStatus:'passed',reviewStatus:'reviewed',hasDeveloperMetrics:true,developerInputTokens:123,developerOutputTokens:45,hasReviewerMetrics:false,pullRequestUrl:'https://github.com/team/repo/pull/1'};
 
 test('form controls and assets remain connected',()=>{
-  for (const id of ['tasks','form','repo','baseBranch','prompt','pr','submit','showMemory','refresh','details','details-title','details-content']) assert.ok(html.includes(`id="${id}"`), id);
+  for (const id of ['tasks','form','repo','baseBranch','prompt','pr','images','imageBudget','image-details','submit','showMemory','refresh','details','details-title','details-content']) assert.ok(html.includes(`id="${id}"`), id);
   assert.match(html,/Исполнители назначаются автоматически/);
   assert.match(html,/dashboard.css/); assert.match(html,/dashboard.js/);
 });
@@ -57,7 +59,7 @@ test('automatic assignment, task creation payload and prompt reset',async()=>{
   ui.element('#prompt').value='Improve UI';
   await ui.listeners['#form:submit']({preventDefault(){}});
   const call=ui.calls.find(c=>c.options?.method==='POST');
-  assert.deepEqual(JSON.parse(call.options.body),{repositoryUrl:'https://github.com/team/repo',prompt:'Improve UI',role:'auto',baseBranch:null,createPullRequest:true});
+  assert.deepEqual(JSON.parse(call.options.body),{repositoryUrl:'https://github.com/team/repo',prompt:'Improve UI',role:'auto',baseBranch:null,createPullRequest:true,enableImageGeneration:false,imageBudgetUsd:0.35});
   assert.equal(ui.element('#prompt').value,'');assert.equal(ui.element('#submit').disabled,false);
 });
 test('logs, diff, checks and reviewer memory remain available',async()=>{
@@ -113,4 +115,25 @@ test('team rendering supports one or multiple assignees, automatic assignment an
   const ui=setup([{...task,role:'auto',participants:'',status:'queued',pullRequestUrl:null}]);await ui.flush();
   assert.match(ui.element('#tasks').innerHTML,/Исполнители назначаются/);
   assert.match(ui.element('#tasks').innerHTML,/Пропущен: без PR/);
+});
+
+test('image opt-in is disabled by default and opt-in payload is explicit', async () => {
+  const ui=setup();await ui.flush();
+  assert.equal(ui.element('#images').checked,false);
+  ui.element('#images').checked=true;
+  ui.element('#imageBudget').value='0.4';
+  ui.element('#repo').value='https://github.com/team/repo';
+  ui.element('#prompt').value='Create game art';
+  await ui.listeners['#form:submit']({preventDefault(){}});
+  const payload=JSON.parse(ui.calls.find(c=>c.options?.method==='POST').options.body);
+  assert.equal(payload.enableImageGeneration,true);
+  assert.equal(payload.imageBudgetUsd,0.4);
+});
+
+test('image-enabled task shows asset control and estimated budget',async()=>{
+  const ui=setup([{...task,enableImageGeneration:true,imageStatus:'reviewing',
+    imageBudgetUsd:0.35,imageReservedUsd:0.027}]);await ui.flush();
+  const rendered=ui.element('#tasks').innerHTML;
+  assert.match(rendered,/data-kind="images"/);
+  assert.match(rendered,/0.027/);
 });
