@@ -1,10 +1,12 @@
 using DeveloperTeam.Data;
 using DeveloperTeam.Endpoints;
+using DeveloperTeam.Validation;
 using DeveloperTeam.Workers;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false);
+AppSettingsValidation.Validate(builder.Configuration);
 
 var connectionString = builder.Configuration.GetConnectionString("Default")
     ?? throw new InvalidOperationException("ConnectionStrings:Default is required.");
