@@ -166,6 +166,17 @@ test('image budget update is offered for failed image planning before any paid r
   assert.match(output,/Сохранение не запускает платную генерацию/);
 });
 
+test('failed task with budget shortfall shows budget editor but not futile retry',async()=>{
+  const ui=setup([{...task,status:'failed',enableImageGeneration:true,
+    imageStatus:'planning',pullRequestUrl:null,imageBudgetUsd:0.35,imageReservedUsd:0,
+    error:'Insufficient budget for 2 separate image assets (minimum reserved USD 0.574, already reserved USD 0.000)'}]);
+  await ui.flush();
+  const rendered=ui.element('#tasks').innerHTML;
+  assert.match(rendered,/data-kind="increase-image-budget"/);
+  assert.doesNotMatch(rendered,/data-kind="retry-images"/);
+  assert.match(rendered,/value="0.75"/);
+});
+
 test('saving increased image budget uses PATCH and never starts a paid image call',async()=>{
   const ui=setup([{...task,status:'failed',enableImageGeneration:true,
     imageStatus:'planning',pullRequestUrl:null,imageBudgetUsd:0.35,imageReservedUsd:0}]);

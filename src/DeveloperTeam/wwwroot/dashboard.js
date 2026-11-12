@@ -165,12 +165,15 @@ async function loadTasks() {
         ' / ' + escapeHtml(t.designerOutputTokens.toLocaleString('ru-RU')) : 'нет данных') +
         ' · Review: ' + (t.hasReviewerMetrics ? escapeHtml(t.reviewerInputTokens.toLocaleString('ru-RU')) +
         ' / ' + escapeHtml(t.reviewerOutputTokens.toLocaleString('ru-RU')) : 'нет данных') + ' <span>(вход / выход)</span></p>';
+      const requiredMatch = String(t.error || '').match(/minimum reserved USD ([0-9]+(?:\.[0-9]+)?)/i);
+      const requiredReserve = requiredMatch ? Number(requiredMatch[1]) : 0;
       const canAdjustImageBudget = t.status === 'failed' && t.enableImageGeneration &&
         ['planning','failed','rejected'].includes(t.imageStatus) && !t.pullRequestUrl &&
         Number(t.imageBudgetUsd || 0) < 2;
       const suggestedBudget = Math.min(2, Math.max(0.75,
         Math.ceil((Number(t.imageBudgetUsd || 0) + 0.05) * 100) / 100,
-        Math.ceil((Number(t.imageReservedUsd || 0) + 0.20) * 100) / 100));
+        Math.ceil((Number(t.imageReservedUsd || 0) + 0.20) * 100) / 100,
+        Math.ceil((Number(t.imageReservedUsd || 0) + requiredReserve + 0.10) * 100) / 100));
       const imageBudgetEditor = canAdjustImageBudget
         ? '<div class="image-budget-editor"><label>Бюджет изображений (USD) ' +
           '<input type="number" min="0.05" max="2" step="0.05" data-budget-for="' + id +
@@ -180,7 +183,8 @@ async function loadTasks() {
       const retryImagesButton = t.status === 'failed' &&
         t.enableImageGeneration && (['failed', 'rejected'].includes(t.imageStatus) ||
           (t.imageStatus === 'planning' && Number(t.imageReservedUsd || 0) === 0)) &&
-        !t.pullRequestUrl && Number(t.imageReservedUsd || 0) + 0.015 <= Number(t.imageBudgetUsd || 0)
+        !t.pullRequestUrl && Number(t.imageReservedUsd || 0) +
+          Math.max(0.015, requiredReserve) <= Number(t.imageBudgetUsd || 0)
         ? '<button class="action" data-id="' + id + '" data-kind="retry-images">Повторить генерацию (платно)</button>' : '';
       const images = t.enableImageGeneration ?
         '<p class="tokens">Изображения · ' + escapeHtml(t.imageStatus || 'Ожидание') +
