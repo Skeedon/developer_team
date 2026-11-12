@@ -66,6 +66,12 @@ await using (var db = await app.Services.GetRequiredService<IDbContextFactory<Ag
             ELSE 'developer' END ||
             CASE WHEN "ReviewStatus" IS NOT NULL THEN ',reviewer' ELSE '' END
         WHERE "Participants" = '';
+        CREATE INDEX IF NOT EXISTS "IX_Tasks_CreatedAt" ON "Tasks" ("CreatedAt");
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "InitialDiff" text NULL;
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "TestStatus" text NULL;
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "TestLog" text NULL;
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "ReviewStatus" text NULL;
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "ReviewLog" text NULL;
         -- Make feedback from already completed tasks visible after upgrading.
         UPDATE "Tasks" SET "HasReviewFindings" = TRUE
         WHERE "ReviewStatus" = 'reviewed' AND "ReviewLog" IS NOT NULL
@@ -73,12 +79,6 @@ await using (var db = await app.Services.GetRequiredService<IDbContextFactory<Ag
           AND lower(btrim(btrim("ReviewLog"), '.')) <> 'no actionable findings'
           AND "HasReviewFindings" = FALSE
           AND "ReviewFixAttempts" = 0;
-        CREATE INDEX IF NOT EXISTS "IX_Tasks_CreatedAt" ON "Tasks" ("CreatedAt");
-        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "InitialDiff" text NULL;
-        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "TestStatus" text NULL;
-        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "TestLog" text NULL;
-        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "ReviewStatus" text NULL;
-        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "ReviewLog" text NULL;
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "BaseBranch" text NULL;
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "CreatePullRequest" boolean NOT NULL DEFAULT FALSE;
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "PullRequestUrl" text NULL;
