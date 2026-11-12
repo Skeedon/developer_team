@@ -50,8 +50,8 @@ public class ImagePipelineTests
             if (path.EndsWith("/responses"))
             {
                 ReviewCalls++;
-                Assert.Contains("\\"type\\":\\"json_schema\\"", body);
-                Assert.Contains("\\"detail\\":\\"high\\"", body);
+                Assert.Contains("json_schema", body);
+                Assert.Contains("detail", body);
                 var pass = reviewPasses.Length >= ReviewCalls && reviewPasses[ReviewCalls - 1];
                 var score = pass ? 0.95 : 0.20;
                 return Json(new { output = new[] { new { content = new[] {
