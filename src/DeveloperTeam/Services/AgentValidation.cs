@@ -122,7 +122,7 @@ public static class AgentValidation
     public static string ExtractReviewerText(string output)
     {
         string? lastMessage = null;
-        foreach (var line in output.Split('\\n'))
+        foreach (var line in output.Split('\n'))
         {
             if (string.IsNullOrWhiteSpace(line)) continue;
             try
