@@ -247,12 +247,17 @@ root.addEventListener('click', e => {
     })
       .then(async response => {
         if (!response.ok) throw Error(await response.text());
-        message.textContent = 'Бюджет увеличен до 
+        message.textContent = 'Бюджет увеличен до USD ' + newBudget.toFixed(2) +
+          '. Теперь можно нажать Повторить генерацию. Сохранение бюджета не расходует API.';
+        await loadTasks();
+      })
+      .catch(err => { message.textContent = 'Ошибка изменения бюджета: ' + err.message; btn.disabled = false; });
+  } else if (btn.dataset.kind === 'retry-images') {
     btn.disabled = true;
     fetch('/api/tasks/' + encodeURIComponent(btn.dataset.id) + '/retry-images', {method:'POST'})
       .then(async response => {
         if (!response.ok) throw Error(await response.text());
-        message.textContent = 'Изображение поставлено в очередь. Используется прежний код и описание ассета. Новый image API вызов платный.';
+        message.textContent = 'Генерация поставлена в очередь. Это запустит платный Image API, но не Designer.';
         await loadTasks();
       })
       .catch(err => { message.textContent = 'Ошибка повторной генерации: ' + err.message; btn.disabled = false; });
