@@ -12,7 +12,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /workspaces /tmp/codex-home /tmp/dotnet-home /tmp/nuget-packages \
     && chown -R 10001:10001 /workspaces /tmp/codex-home /tmp/dotnet-home /tmp/nuget-packages
-ENV DOTNET_CLI_HOME=/tmp/dotnet-home \
+ENV HOME=/tmp/dotnet-home \
+    XDG_DATA_HOME=/tmp/dotnet-home/.local/share \
+    DOTNET_CLI_HOME=/tmp/dotnet-home \
     NUGET_PACKAGES=/tmp/nuget-packages \
     DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 \
     DOTNET_CLI_TELEMETRY_OPTOUT=1

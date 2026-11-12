@@ -85,7 +85,9 @@ public sealed class GitHubPublisher(HttpClient client, IConfiguration configurat
         var title = task.Prompt.Replace('\n', ' ').Replace('\r', ' ').Trim();
         if (title.Length > 90) title = title[..90] + "…";
         var body = "Automated draft PR by Developer Team.\n\nTask: "
-            + task.Prompt + "\n\nChanges have NOT been independently reviewed or tested.";
+            + task.Prompt + $"\n\n**Tests:** {task.TestStatus ?? "not run"}" +
+            $"\n\n**Reviewer:** {task.ReviewStatus ?? "not run"}" +
+            "\n\nSee the task checks report for test attempts and reviewer findings. Human review is required before merging.";
         using var response = await ApiAsync(HttpMethod.Post, api + "/pulls", token,
             new { title = "Agent: " + title, head = branch, @base = baseBranch, body, draft = true }, ct);
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));

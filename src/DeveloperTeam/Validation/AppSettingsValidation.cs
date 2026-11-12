@@ -51,6 +51,10 @@ public static class AppSettingsValidation
             || (double)minutes * 60_000 > uint.MaxValue - 1))
             errors.Add("Worker:TaskTimeoutMinutes must be a positive integer within the supported timer range (1–71582).");
 
+        var fixAttempts = configuration["Worker:MaxFixAttempts"];
+        if (fixAttempts is not null && (!int.TryParse(fixAttempts, out var attempts) || attempts < 0))
+            errors.Add("Worker:MaxFixAttempts must be a nonnegative integer (default: 2).");
+
         if (isWorker)
         {
             if (string.IsNullOrWhiteSpace(configuration["OpenAI:ApiKey"]))
