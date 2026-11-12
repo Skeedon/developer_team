@@ -38,6 +38,65 @@ document.querySelector('#showMemory').addEventListener('click', async () => {
 });
 const statuses = {queued:'В очереди',running:'В работе',publishing:'Публикация PR',publish_queued:'PR в очереди',completed:'Завершено',failed:'Ошибка',publish_failed:'Ошибка публикации'};
 const checkStatuses = {pending:'Ожидание',passed:'Пройдены',failed:'Ошибка',reviewed:'Проверено',skipped:'Пропущено',not_run:'Не запускались',running:'В работе'};
+// API integration contract: currentStage = assignment | development | testing | review | publication.
+// The task status determines whether the current stage is running, paused or failed.
+const workflowStages = [
+  ['assignment', 'Назначение исполнителей', 'Назначение'],
+  ['development', 'Разработка', 'Разработка'],
+  ['testing', 'Тестирование и исправления', 'Тесты и правки'],
+  ['review', 'Reviewer', 'Reviewer'],
+  ['publication', 'Публикация PR', 'Публикация PR']
+];
+function taskWorkflow(task) {
+  const completed = task.status === 'completed';
+  const failed = ['failed', 'publish_failed'].includes(task.status);
+  const publishing = ['publishing', 'publish_queued', 'publish_failed'].includes(task.status);
+  let stage = workflowStages.findIndex(([key]) => key === task.currentStage);
+  if (completed) stage = task.createPullRequest || task.pullRequestUrl ? 4 : 3;
+  else if (publishing) stage = 4;
+  else if (stage < 0 && task.status === 'queued') stage = 0;
+  else if (stage < 0 && task.reviewStatus === 'running') stage = 3;
+  else if (stage < 0 && task.testStatus === 'running') stage = 2;
+  // Historical running/failed tasks have no reliable stage. Do not invent one.
+  const unknown = stage < 0;
+  const states = workflowStages.map((_, index) => {
+    if (index === 4 && !task.createPullRequest && !task.pullRequestUrl && !publishing) return 'skipped';
+    if (unknown) return 'pending';
+    if (completed || index < stage) return 'done';
+    if (index > stage) return 'pending';
+    return failed ? 'error' : ['queued', 'publish_queued'].includes(task.status) ? 'queued' : 'active';
+  });
+  return {stage, states, unknown, completed, failed};
+}
+function renderWorkflow(task) {
+  const flow = taskWorkflow(task);
+  const stateLabels = {done:'Завершён', pending:'Ожидает', active:'В работе', queued:'В очереди', error:'Ошибка', skipped:'Пропущен: без PR'};
+  const title = flow.unknown ? 'Этап не указан' : workflowStages[flow.stage][1];
+  const caption = flow.completed ? 'Все этапы завершены' : flow.unknown ? 'Нет данных об этапе' :
+    flow.failed ? 'Остановлено на этапе' : task.status === 'publish_queued' ? 'Повторная публикация в очереди' : 'Текущий этап';
+  return '<section class="workflow" aria-label="Этапы выполнения задачи"><div class="workflow-heading"><div><span class="workflow-caption">' + caption +
+    '</span><p class="workflow-title">' + (flow.completed ? 'Задача выполнена' : title) + '</p></div><span class="workflow-count">' +
+    flow.states.filter(s => s === 'done').length + ' / ' + flow.states.filter(s => s !== 'skipped').length + ' завершено</span></div>' +
+    '<ol class="workflow-steps">' + workflowStages.map(([key, label, short], index) => {
+      const state = flow.states[index];
+      const current = !flow.completed && !flow.unknown && index === flow.stage;
+      const icon = state === 'done' ? '✓' : state === 'error' ? '!' : state === 'skipped' ? '−' : index + 1;
+      return '<li class="workflow-step is-' + state + '"' + (current ? ' aria-current="step"' : '') +
+        '><span class="step-node" aria-hidden="true">' + icon + '</span><span class="step-label" aria-hidden="true">' + short +
+        '</span><span class="sr-only">' + label + ': ' + stateLabels[state] + '</span></li>';
+    }).join('') + '</ol></section>';
+}
+function renderParticipants(task) {
+  const raw = Array.isArray(task.participants) ? task.participants : String(task.participants || '').split(',');
+  const roles = [...new Set(raw.map(role => role.trim().toLowerCase()).filter(role => ['developer','designer'].includes(role)))];
+  if (!roles.length && ['developer','designer'].includes(task.role)) roles.push(task.role);
+  const labels = {developer:'Developer', designer:'Designer', reviewer:'Reviewer'};
+  const symbols = {developer:'</>', designer:'◇', reviewer:'✓'};
+  return '<div class="task-team" aria-label="Участники задачи"><span class="team-caption">Команда</span>' +
+    roles.concat('reviewer').map(role => '<span class="team-member team-' + role + '"><span class="team-avatar" aria-hidden="true">' +
+      escapeHtml(symbols[role]) + '</span>' + labels[role] + '</span>').join('') +
+    (!roles.length ? '<span class="team-pending">Исполнители назначаются</span>' : '') + '</div>';
+}
 let lastTasks = '';
 let loading = false;
 async function loadTasks() {
@@ -74,9 +133,9 @@ async function loadTasks() {
         ' / ' + escapeHtml(t.reviewerOutputTokens.toLocaleString('ru-RU')) : 'нет данных') + ' <span>(вход / выход)</span></p>';
       const error = t.error ? '<p class="failed task-error">' + escapeHtml(t.error) + '</p>' : '';
       const repository = t.repositoryUrl.replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/, '');
-      return '<article class="task"><div class="task-header"><span class="agent-label"><span class="agent-icon" aria-hidden="true">' + '✳' + '</span>' + escapeHtml((t.participants || t.role || 'developer').split(',').join(' · ')) + '</span><span class="status ' + status + '">' + escapeHtml(statuses[t.status] || t.status) + '</span></div>' +
+      return '<article class="task"><div class="task-header"><span class="agent-label"><span class="agent-icon" aria-hidden="true">' + '✳' + '</span>' + 'Задача команды' + '</span><span class="status ' + status + '">' + escapeHtml(statuses[t.status] || t.status) + '</span></div>' +
         '<h3>' + escapeHtml(t.prompt) + '</h3><div class="task-meta"><span>' + escapeHtml(repository) + '</span><span>⑂ ' + escapeHtml(t.baseBranch || 'default') + '</span><time datetime="' + escapeHtml(t.createdAt) + '">' +
-        escapeHtml(new Date(t.createdAt).toLocaleString('ru-RU')) + '</time></div>' + checksLabel + tokens + error + '<div class="task-actions">' +
+        escapeHtml(new Date(t.createdAt).toLocaleString('ru-RU')) + '</time></div>' + renderWorkflow(t) + renderParticipants(t) + checksLabel + tokens + error + '<div class="task-actions">' +
         '<button class="action" data-id="' + id + '" data-kind="log">Лог</button>' +
         '<button class="action" data-id="' + id + '" data-kind="diff">Diff</button>' +
         '<button class="action" data-id="' + id + '" data-kind="checks">Проверки</button>' +

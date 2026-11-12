@@ -46,3 +46,18 @@ Future iterations will add independent QA, artifact bundles, explicit push/PR ap
 Старые нулевые счётчики и число исправлений не восстанавливаются предположениями.
 Модели, тарифы и существующие поля API не изменяются; API задач дополнен признаками наличия метрик.
 Страница: `/analytics.html`.
+
+
+### Task execution progress
+
+`GET /api/tasks` and `GET /api/tasks/{id}` include nullable `currentStage`:
+`assignment`, `development`, `testing`, `review`, `publication`.
+Creation returns `assignment`; `retry-publish` returns `publication` with `publish_queued`.
+The worker saves the stage before executing it, independently of `status`.
+`development` covers all assigned Developer/Designer turns; test retries and fixes remain in `testing`.
+Reviewer is added to `participants` when review starts. Failures/cancellation retain the last stage;
+publication retries do not rerun development/checks or overwrite the execution finish timestamp.
+Without `createPullRequest`, successful execution finishes at `review` and the UI skips publication.
+Old records retain `currentStage: null`: the UI infers only reliable queue/publication/completion states
+and displays unknown progress for historical running/failed records. The startup schema update is additive
+and idempotent; existing fields and statuses are preserved.

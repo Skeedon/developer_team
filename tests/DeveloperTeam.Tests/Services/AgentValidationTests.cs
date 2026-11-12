@@ -55,6 +55,7 @@ public class AgentValidationTests
     [Theory]
     [InlineData(null, 9, 2, "failed")]
     [InlineData(null, 9, 2, "failed", true)]
+    [InlineData(null, 0, 0, "passed", false, true)]
     [InlineData("0", 9, 0, "failed")]
     [InlineData("1", 9, 1, "failed")]
     [InlineData("3", 9, 3, "failed")]
@@ -62,7 +63,7 @@ public class AgentValidationTests
     [InlineData(null, 1, 1, "passed")]
     [InlineData(null, 2, 2, "passed")]
     public async Task FixLoop_BoundsAttemptsAndReviewsFinalState(
-        string? limit, int failures, int expectedFixes, string expectedStatus, bool correctionFails = false)
+        string? limit, int failures, int expectedFixes, string expectedStatus, bool correctionFails = false, bool reviewerFails = false)
     {
         var workspace = Path.Combine(Environment.CurrentDirectory, "obj", "validation-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(workspace);
@@ -70,6 +71,8 @@ public class AgentValidationTests
         try
         {
             var events = new List<string>();
+            string? stage = null;
+            var stages = new List<string>();
             var tests = 0;
             var fixes = 0;
             var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
@@ -84,28 +87,37 @@ public class AgentValidationTests
                 Assert.Equal(workspace, cwd);
                 if (exe == "dotnet")
                 {
+                    Assert.Equal("testing", stage);
                     events.Add("test");
                     return Task.FromResult((++tests <= failures ? 1 : 0, "test output " + tests));
                 }
+                Assert.Equal("review", stage);
                 events.Add("review");
                 Assert.Contains("read-only", args);
-                return Task.FromResult((0, """
+                return Task.FromResult((reviewerFails ? 1 : 0, """
                     {"type":"item.completed","item":{"type":"agent_message","text":"No actionable findings"}}
                     """));
             }
             var result = await AgentValidation.RunAsync(workspace, config, Run, CancellationToken.None,
                 (attempt, error, ct) =>
                 {
+                    Assert.Equal("testing", stage);
                     events.Add("fix");
                     Assert.Equal(++fixes, attempt);
                     Assert.Contains("test output " + attempt, error);
                     if (correctionFails) throw new TimeoutException("Developer timed out");
                     return Task.FromResult("correction " + attempt);
+                }, recordStage: (value, _) =>
+                {
+                    stage = value;
+                    stages.Add(value);
+                    return Task.CompletedTask;
                 });
+            Assert.Equal(new[] { "testing", "review" }, stages);
             Assert.Equal(expectedFixes, fixes);
             Assert.Equal(expectedFixes + 1, tests);
             Assert.Equal(expectedStatus, result.TestStatus);
-            Assert.Equal("reviewed", result.ReviewStatus);
+            Assert.Equal(reviewerFails ? "failed" : "reviewed", result.ReviewStatus);
             Assert.Equal(Enumerable.Repeat(new[] { "test", "fix" }, fixes).SelectMany(x => x)
                 .Concat(new[] { "test", "review" }), events);
             for (var attempt = 1; attempt <= fixes; attempt++)
@@ -161,6 +173,7 @@ public class AgentValidationTests
             using var cancelled = new CancellationTokenSource();
             var commands = 0;
             var resultLog = "";
+            string? stage = null;
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => AgentValidation.RunAsync(
                 workspace, new ConfigurationBuilder().Build(),
                 (_, _, _, _, _) =>
@@ -172,7 +185,9 @@ public class AgentValidationTests
                 {
                     cancelled.Cancel();
                     throw new OperationCanceledException(cancelled.Token);
-                }, (_, log) => resultLog = log));
+                }, (_, log) => resultLog = log,
+                recordStage: (value, _) => { stage = value; return Task.CompletedTask; }));
+            Assert.Equal("testing", stage);
             Assert.Equal(1, commands);
             Assert.Contains("Test attempt 0: failed", resultLog);
         }

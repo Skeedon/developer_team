@@ -13,6 +13,8 @@ public sealed class AgentTask
     public long DesignerOutputTokens { get; set; }
     public string? BaseBranch { get; set; }
     public string Status { get; set; } = "";
+    // Null means that a historical task has no reliable stage information.
+    public string? CurrentStage { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? StartedAt { get; set; }
     // The original execution end timestamp is never overwritten on publication retry.

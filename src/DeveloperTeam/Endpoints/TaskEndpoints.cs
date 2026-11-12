@@ -16,7 +16,7 @@ public static class TaskEndpoints
         return Results.Ok(await db.Tasks.AsNoTracking()
             .OrderByDescending(x => x.CreatedAt)
             .Take(100)
-            .Select(x => new { x.Id, x.RepositoryUrl, x.BaseBranch, x.Prompt, x.Role, x.Participants, x.Status, x.CreatedAt, x.StartedAt, x.FinishedAt, x.Error, x.CreatePullRequest, x.PullRequestUrl, x.TestStatus, x.ReviewStatus, x.HasDeveloperMetrics, x.HasDesignerMetrics, x.HasReviewerMetrics, x.DesignerInputTokens, x.DesignerCachedTokens, x.DesignerOutputTokens, x.DeveloperCachedTokens, x.ReviewerCachedTokens, x.DeveloperInputTokens, x.DeveloperOutputTokens, x.ReviewerInputTokens, x.ReviewerOutputTokens })
+            .Select(x => new { x.Id, x.RepositoryUrl, x.BaseBranch, x.Prompt, x.Role, x.Participants, x.Status, x.CurrentStage, x.CreatedAt, x.StartedAt, x.FinishedAt, x.Error, x.CreatePullRequest, x.PullRequestUrl, x.TestStatus, x.ReviewStatus, x.HasDeveloperMetrics, x.HasDesignerMetrics, x.HasReviewerMetrics, x.DesignerInputTokens, x.DesignerCachedTokens, x.DesignerOutputTokens, x.DeveloperCachedTokens, x.ReviewerCachedTokens, x.DeveloperInputTokens, x.DeveloperOutputTokens, x.ReviewerInputTokens, x.ReviewerOutputTokens })
             .ToListAsync());
     });
 
@@ -26,7 +26,7 @@ public static class TaskEndpoints
         var task = await db.Tasks.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
         return task is null ? Results.NotFound() : Results.Ok(new
         {
-            task.Id, task.RepositoryUrl, task.BaseBranch, task.Prompt, task.Role, task.Participants, task.Status, task.CreatedAt,
+            task.Id, task.RepositoryUrl, task.BaseBranch, task.Prompt, task.Role, task.Participants, task.Status, task.CurrentStage, task.CreatedAt,
             task.StartedAt, task.FinishedAt, task.Error, task.WorkspacePath,
             task.CreatePullRequest, task.PullRequestUrl, task.PullRequestBranch,
             task.TestStatus, task.ReviewStatus,
@@ -91,9 +91,10 @@ public static class TaskEndpoints
                 (t.Status == "failed" || t.Status == "publish_failed") &&
                 t.Diff != null && t.Diff != "" && t.PullRequestUrl == null)
             .ExecuteUpdateAsync(x => x.SetProperty(t => t.Status, "publish_queued")
+                .SetProperty(t => t.CurrentStage, TaskProgress.Publication)
                 .SetProperty(t => t.Error, (string?)null));
         if (changed == 1)
-            return Results.Accepted($"/api/tasks/{id}", new { id, status = "publish_queued" });
+            return Results.Accepted($"/api/tasks/{id}", new { id, status = "publish_queued", currentStage = TaskProgress.Publication });
         return await db.Tasks.AsNoTracking().AnyAsync(t => t.Id == id)
             ? Results.Conflict(new { error = "Retry requires a failed PR task with a saved diff and no PR." })
             : Results.NotFound();
@@ -127,13 +128,14 @@ public static class TaskEndpoints
             Role = DeveloperTeam.Services.AgentRoleInstructions.Normalize(request.Role),
             BaseBranch = string.IsNullOrWhiteSpace(sourceBranch) ? null : sourceBranch,
             Status = "queued",
+            CurrentStage = TaskProgress.Assignment,
             CreatePullRequest = request.CreatePullRequest,
             CreatedAt = DateTime.UtcNow
         };
         await using var db = await factory.CreateDbContextAsync();
         db.Tasks.Add(task);
         await db.SaveChangesAsync();
-        return Results.Created($"/api/tasks/{task.Id}", new { task.Id, task.Status });
+        return Results.Created($"/api/tasks/{task.Id}", new { task.Id, task.Status, task.CurrentStage });
     });
 
         return app;
