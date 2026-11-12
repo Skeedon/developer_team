@@ -6,6 +6,11 @@ public sealed class AgentTask
     public string RepositoryUrl { get; set; } = "";
     public string Prompt { get; set; } = "";
     public string Role { get; set; } = "developer";
+    public string Participants { get; set; } = "";
+    public bool HasDesignerMetrics { get; set; }
+    public long DesignerInputTokens { get; set; }
+    public long DesignerCachedTokens { get; set; }
+    public long DesignerOutputTokens { get; set; }
     public string? BaseBranch { get; set; }
     public string Status { get; set; } = "";
     public DateTime CreatedAt { get; set; }

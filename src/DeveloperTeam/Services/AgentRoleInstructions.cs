@@ -4,11 +4,35 @@ namespace DeveloperTeam.Services;
 public static class AgentRoleInstructions
 {
     public static bool IsSupported(string? role) =>
-        role is null || role.Equals("developer", StringComparison.OrdinalIgnoreCase) ||
+        role is null || role.Equals("auto", StringComparison.OrdinalIgnoreCase) || role.Equals("developer", StringComparison.OrdinalIgnoreCase) ||
         role.Equals("designer", StringComparison.OrdinalIgnoreCase);
 
-    public static string Normalize(string? role) =>
-        role?.Equals("designer", StringComparison.OrdinalIgnoreCase) == true ? "designer" : "developer";
+    public static string Normalize(string? role) => role?.ToLowerInvariant() switch
+    {
+        "developer" => "developer",
+        "designer" => "designer",
+        _ => "auto"
+    };
+
+    // Local heuristic routing avoids extra API cost. Unknown requests go to Developer.
+    public static IReadOnlyList<string> Plan(string? role, string prompt)
+    {
+        if (Normalize(role) == "designer") return ["designer"];
+        if (Normalize(role) == "developer") return ["developer"];
+        var text = prompt.ToLowerInvariant();
+        bool visual = HasAny(text, "дизайн", "интерфейс", "ui/", "ui ", "ux", "верст", "вёрст",
+            "css", "стил", "цвет", "кнопк", "адаптив", "анимац", "layout", "responsive",
+            "frontend", "фронтенд", "оформлен", "типограф", "макет", "redesign");
+        bool functional = HasAny(text, "api", "endpoint", "бэкенд", "бекенд", "backend",
+            "сервер", "базу данных", "базы данных", "postgres", "миграц", "авторизац",
+            "сохранени", "интеграц", "ef core", "добавь логику", "business logic",
+            "реализуй метод", "unit-тест", "юнит-тест");
+        if (visual && functional) return ["designer", "developer"];
+        return visual ? ["designer"] : ["developer"];
+    }
+
+    private static bool HasAny(string text, params string[] markers) =>
+        markers.Any(text.Contains);
 
     public static string BuildPrompt(string? role, string task)
     {

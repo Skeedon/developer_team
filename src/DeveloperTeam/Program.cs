@@ -27,6 +27,11 @@ await using (var db = await app.Services.GetRequiredService<IDbContextFactory<Ag
             "Notes" text NOT NULL,
             "UpdatedAt" timestamp with time zone NOT NULL
         );
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "Participants" text NOT NULL DEFAULT '';
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "HasDesignerMetrics" boolean NOT NULL DEFAULT FALSE;
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "DesignerInputTokens" bigint NOT NULL DEFAULT 0;
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "DesignerCachedTokens" bigint NOT NULL DEFAULT 0;
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "DesignerOutputTokens" bigint NOT NULL DEFAULT 0;
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "Role" text NOT NULL DEFAULT 'developer';
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "LastPublicationRetryAt" timestamp with time zone NULL;
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "DeveloperInputTokens" bigint NOT NULL DEFAULT 0;
@@ -42,6 +47,22 @@ await using (var db = await app.Services.GetRequiredService<IDbContextFactory<Ag
             WHERE NOT "HasDeveloperMetrics" AND ("DeveloperInputTokens" > 0 OR "DeveloperCachedTokens" > 0 OR "DeveloperOutputTokens" > 0);
         UPDATE "Tasks" SET "HasReviewerMetrics" = TRUE
             WHERE NOT "HasReviewerMetrics" AND ("ReviewerInputTokens" > 0 OR "ReviewerCachedTokens" > 0 OR "ReviewerOutputTokens" > 0);
+        -- Reattribute legacy designer usage, once, without losing total tokens.
+        UPDATE "Tasks" SET
+            "DesignerInputTokens" = "DeveloperInputTokens",
+            "DesignerCachedTokens" = "DeveloperCachedTokens",
+            "DesignerOutputTokens" = "DeveloperOutputTokens",
+            "HasDesignerMetrics" = "HasDeveloperMetrics",
+            "DeveloperInputTokens" = 0,
+            "DeveloperCachedTokens" = 0,
+            "DeveloperOutputTokens" = 0,
+            "HasDeveloperMetrics" = FALSE
+        WHERE "Role" = 'designer' AND "Participants" = '' AND "HasDesignerMetrics" = FALSE;
+        UPDATE "Tasks" SET "Participants" = CASE
+            WHEN "Role" = 'designer' THEN 'designer'
+            ELSE 'developer' END ||
+            CASE WHEN "ReviewStatus" IS NOT NULL THEN ',reviewer' ELSE '' END
+        WHERE "Participants" = '';
         CREATE INDEX IF NOT EXISTS "IX_Tasks_CreatedAt" ON "Tasks" ("CreatedAt");
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "InitialDiff" text NULL;
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "TestStatus" text NULL;
