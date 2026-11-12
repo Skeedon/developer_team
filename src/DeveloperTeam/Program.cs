@@ -189,12 +189,13 @@ public sealed class AgentWorker(
             if (codex.ExitCode != 0)
                 throw new InvalidOperationException($"Codex returned exit code {codex.ExitCode}.");
 
+            var intent = await RunProcessAsync("git", ["add", "-N", "."], workspace, token);
+            if (intent.ExitCode != 0) throw new InvalidOperationException("Unable to index new files for diff.");
             var diff = await RunProcessAsync("git", ["diff", "--no-ext-diff", "--binary", "HEAD"], workspace, token);
             var status = await RunProcessAsync("git", ["status", "--short"], workspace, token);
             transcript.AppendLine("Git status:" + Environment.NewLine + status.Output);
             task.Diff = Limit(diff.Output, 250_000);
-            if (!string.IsNullOrWhiteSpace(status.Output))
-                transcript.AppendLine("Note: git diff does not include the content of untracked files.");
+
             task.Status = "completed";
         }
         catch (OperationCanceledException) when (!token.IsCancellationRequested)
