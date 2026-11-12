@@ -32,6 +32,16 @@ PostgreSQL data location: named Docker volume `postgres_data`, mounted under `/v
 
 The worker uses the built-in OpenAI provider and `https://api.openai.com/v1`. Model `gpt-6.1-sol` is an example; verify that your API account can access it, otherwise change `OpenAI:Model`. Billing uses your OpenAI Platform API credits, not ChatGPT subscription usage. Restart the worker after editing the local JSON file.
 
+## Local dashboard and downloads
+
+After starting Docker Compose, open **http://localhost:5088/**. Submit tasks, monitor status (refreshes every 5 seconds), inspect logs and diffs, and download completed workspaces as ZIP without entering Docker. The API mounts the workspace Docker volume read-only. Downloads omit `.git`, node_modules, build folders and common secret files; capped at 50 MiB of source data / 1500 files. The dashboard is **not authenticated**, so leave port 5088 bound to localhost only.
+
+Update from this branch and recreate both services after the change:
+
+```powershell
+docker compose up -d --build --force-recreate api worker
+```
+
 ## API
 
 ```http
@@ -40,6 +50,7 @@ GET /api/tasks
 GET /api/tasks/{id}
 GET /api/tasks/{id}/log
 GET /api/tasks/{id}/diff
+GET /api/tasks/{id}/download  # completed tasks, returns ZIP
 POST /api/tasks
 Content-Type: application/json
 
