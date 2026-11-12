@@ -372,6 +372,6 @@ public sealed class AgentWorker(
             throw;
         }
         var output = await stdout + Environment.NewLine + await stderr;
-        return (process.ExitCode, Limit(output, 160_000));
+        return (process.ExitCode, DeveloperTeam.Services.CodexTokenUsage.PreserveLifecycleTail(output, 160_000));
     }
 }
