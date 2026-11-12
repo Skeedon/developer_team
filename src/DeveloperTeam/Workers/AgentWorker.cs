@@ -133,6 +133,7 @@ public sealed class AgentWorker(
             WorkingDirectory = workingDirectory,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            RedirectStandardInput = true,
             UseShellExecute = false
         };
         foreach (var arg in args) start.ArgumentList.Add(arg);
@@ -140,6 +141,7 @@ public sealed class AgentWorker(
             foreach (var pair in environment) start.Environment[pair.Key] = pair.Value;
         using var process = new Process { StartInfo = start };
         process.Start();
+        process.StandardInput.Close(); // Codex exec must receive EOF in non-interactive Docker runs.
         // Read both streams concurrently to prevent child-process pipe deadlocks.
         var stdout = process.StandardOutput.ReadToEndAsync(token);
         var stderr = process.StandardError.ReadToEndAsync(token);
