@@ -143,8 +143,14 @@ final. GPT Image 2 transparency is still unavailable in some API projects,
 where it returns HTTP 400 `invalid_value`. GPT Image 1.5 is an older model
 that supports PNG transparency. An independent `gpt-4.1-mini` vision evaluation
 compares the actual rendered draft with the brief and checklist, requiring
-an explicit pass and score of at least **0.80**. Rejected drafts are
-regenerated only at low quality. If both fail, the task fails safely
+an explicit pass and **composition score of at least 0.75**. The evaluator
+uses a strict JSON schema to avoid confusing malformed answers with bad artwork.
+It checks only **core subject, angle, framing and forbidden elements**, not the
+draft's lack of photorealism, polish or fine details. It examines the reference
+image at high vision detail, but the generated draft itself remains low-cost.
+Each attempt's findings and score are retained for inspection in the task UI,
+and failure messages show the concrete reasons. Rejected drafts are regenerated
+only at low generation quality. If both fail, the task fails safely
 without making any high-quality image request.
 
 A passing draft becomes a base64 data-URL **reference image** for a final
@@ -164,6 +170,12 @@ images, image/evaluator token counts and **conservative USD reservations**.
 API routes: `GET /api/tasks/{id}/images` and
 `GET /api/tasks/{id}/images/{assetId}/draft|final`.
 
+For sprite-heavy games, this first implementation intentionally generates
+**at most one PNG per task**. Ask Designer for one specific vehicle with a
+strict side-view reference, not an entire vehicle collection in one task.
+Other cars should be requested separately until the platform supports
+multi-asset image jobs and pooled image budgets.
+
 **Retry without another coding turn:** if image generation fails before
 tests/review/PR publication (including HTTP 400 for an unsupported background),
 the task card offers **Повторить генерацию (платно)**. This atomically queues a
@@ -179,9 +191,13 @@ Docker volume before retrying.
 
 **Cost controls and limitations:** the worker reserves estimated spending
 before every image or vision call and blocks calls that would exceed the
-task's specified budget. Defaults use $0.015 per draft, $0.012 per
-vision evaluation, and $0.230–0.270 per high-quality final depending
-on orientation. These are **budget allowances, not measured OpenAI charges**;
+task's specified budget. Before generating a draft, it also verifies that
+there is enough remaining budget for the draft **plus** vision assessment
+**plus** a possible high-quality final, so a futile paid draft is never started.
+Defaults use $0.015 per draft, $0.012 per vision evaluation, and high-quality
+final reserves of $0.180 (transparent square, GPT Image 1.5), $0.260
+(transparent portrait/landscape), $0.270 (opaque square, GPT Image 2),
+or $0.230 (opaque portrait/landscape). These are **budget allowances, not measured OpenAI charges**;
 the actual invoice depends on model token usage and the provider's current
 pricing, and failed requests may still incur charges. The default maximum
 does not apply to the existing Codex text/reviewer usage. Model IDs are
