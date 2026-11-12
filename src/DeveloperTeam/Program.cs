@@ -12,6 +12,7 @@ var connectionString = builder.Configuration.GetConnectionString("Default")
     ?? throw new InvalidOperationException("ConnectionStrings:Default is required.");
 builder.Services.AddDbContextFactory<AgentDbContext>(options => options.UseNpgsql(connectionString));
 builder.Services.AddHttpClient<DeveloperTeam.Services.GitHubPublisher>();
+builder.Services.AddHttpClient<DeveloperTeam.Services.ImagePipeline>(c => c.Timeout = TimeSpan.FromMinutes(8));
 
 var role = builder.Configuration["APP_ROLE"] ?? "api";
 if (role.Equals("worker", StringComparison.OrdinalIgnoreCase))
@@ -29,6 +30,32 @@ await using (var db = await app.Services.GetRequiredService<IDbContextFactory<Ag
         );
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "HasReviewFindings" boolean NOT NULL DEFAULT FALSE;
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "ReviewFixAttempts" integer NOT NULL DEFAULT 0;
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "EnableImageGeneration" boolean NOT NULL DEFAULT FALSE;
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "ImageBudgetUsd" numeric NOT NULL DEFAULT 0.35;
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "ImageReservedUsd" numeric NOT NULL DEFAULT 0;
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "ImageStatus" text NULL;
+        CREATE TABLE IF NOT EXISTS "GeneratedAssets" (
+            "Id" uuid PRIMARY KEY,
+            "TaskId" uuid NOT NULL,
+            "Path" text NOT NULL,
+            "Prompt" text NOT NULL,
+            "CriteriaJson" text NOT NULL DEFAULT '[]',
+            "Size" text NOT NULL DEFAULT '1024x1024',
+            "Transparent" boolean NOT NULL DEFAULT FALSE,
+            "Status" text NOT NULL DEFAULT 'queued',
+            "DraftAttempts" integer NOT NULL DEFAULT 0,
+            "FinalAttempts" integer NOT NULL DEFAULT 0,
+            "Score" double precision NULL,
+            "Review" text NULL,
+            "ReservedUsd" numeric NOT NULL DEFAULT 0,
+            "ImageInputTokens" bigint NOT NULL DEFAULT 0,
+            "ImageOutputTokens" bigint NOT NULL DEFAULT 0,
+            "EvaluatorInputTokens" bigint NOT NULL DEFAULT 0,
+            "EvaluatorOutputTokens" bigint NOT NULL DEFAULT 0,
+            "Error" text NULL,
+            "CreatedAt" timestamp with time zone NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS "IX_GeneratedAssets_TaskId" ON "GeneratedAssets" ("TaskId");
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "CurrentStage" text NULL;
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "Participants" text NOT NULL DEFAULT '';
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "HasDesignerMetrics" boolean NOT NULL DEFAULT FALSE;

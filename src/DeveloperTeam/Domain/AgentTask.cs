@@ -30,6 +30,11 @@ public sealed class AgentTask
     public string? InitialDiff { get; set; }
     public string? Diff { get; set; }
     public string? Error { get; set; }
+    public bool EnableImageGeneration { get; set; }
+    public decimal ImageBudgetUsd { get; set; } = 0.35m;
+    // Conservative pre-request budget reservations, not exact invoice charges.
+    public decimal ImageReservedUsd { get; set; }
+    public string? ImageStatus { get; set; }
     public bool CreatePullRequest { get; set; }
     public string? PullRequestUrl { get; set; }
     public string? PullRequestBranch { get; set; }

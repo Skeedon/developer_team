@@ -16,7 +16,7 @@ public static class TaskEndpoints
         return Results.Ok(await db.Tasks.AsNoTracking()
             .OrderByDescending(x => x.CreatedAt)
             .Take(100)
-            .Select(x => new { x.Id, x.RepositoryUrl, x.BaseBranch, x.Prompt, x.Role, x.Participants, x.Status, x.CurrentStage, x.CreatedAt, x.StartedAt, x.FinishedAt, x.Error, x.CreatePullRequest, x.PullRequestUrl, x.TestStatus, x.ReviewStatus, x.HasReviewFindings, x.ReviewFixAttempts, x.HasDeveloperMetrics, x.HasDesignerMetrics, x.HasReviewerMetrics, x.DesignerInputTokens, x.DesignerCachedTokens, x.DesignerOutputTokens, x.DeveloperCachedTokens, x.ReviewerCachedTokens, x.DeveloperInputTokens, x.DeveloperOutputTokens, x.ReviewerInputTokens, x.ReviewerOutputTokens })
+            .Select(x => new { x.Id, x.RepositoryUrl, x.BaseBranch, x.Prompt, x.Role, x.Participants, x.Status, x.CurrentStage, x.EnableImageGeneration, x.ImageBudgetUsd, x.ImageReservedUsd, x.ImageStatus, x.CreatedAt, x.StartedAt, x.FinishedAt, x.Error, x.CreatePullRequest, x.PullRequestUrl, x.TestStatus, x.ReviewStatus, x.HasReviewFindings, x.ReviewFixAttempts, x.HasDeveloperMetrics, x.HasDesignerMetrics, x.HasReviewerMetrics, x.DesignerInputTokens, x.DesignerCachedTokens, x.DesignerOutputTokens, x.DeveloperCachedTokens, x.ReviewerCachedTokens, x.DeveloperInputTokens, x.DeveloperOutputTokens, x.ReviewerInputTokens, x.ReviewerOutputTokens })
             .ToListAsync());
     });
 
@@ -26,7 +26,7 @@ public static class TaskEndpoints
         var task = await db.Tasks.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
         return task is null ? Results.NotFound() : Results.Ok(new
         {
-            task.Id, task.RepositoryUrl, task.BaseBranch, task.Prompt, task.Role, task.Participants, task.Status, task.CurrentStage, task.CreatedAt,
+            task.Id, task.RepositoryUrl, task.BaseBranch, task.Prompt, task.Role, task.Participants, task.Status, task.CurrentStage, task.EnableImageGeneration, task.ImageBudgetUsd, task.ImageReservedUsd, task.ImageStatus, task.CreatedAt,
             task.StartedAt, task.FinishedAt, task.Error, task.WorkspacePath,
             task.CreatePullRequest, task.PullRequestUrl, task.PullRequestBranch,
             task.TestStatus, task.ReviewStatus, task.HasReviewFindings, task.ReviewFixAttempts,
@@ -122,6 +122,11 @@ public static class TaskEndpoints
         if (string.IsNullOrWhiteSpace(request.Prompt) || request.Prompt.Length > 10000)
             return Results.BadRequest(new { error = "Prompt must have 1–10000 characters." });
 
+        if (request.ImageBudgetUsd is < 0.05m or > 2.00m)
+            return Results.BadRequest(new { error = "Image budget must be between $0.05 and $2.00." });
+        if (request.EnableImageGeneration && !request.CreatePullRequest)
+            return Results.BadRequest(new { error = "Image generation needs a Draft PR to review generated assets." });
+
         if (!DeveloperTeam.Services.AgentRoleInstructions.IsSupported(request.Role))
             return Results.BadRequest(new { error = "Role must be auto, developer or designer." });
 
@@ -145,6 +150,9 @@ public static class TaskEndpoints
             Status = "queued",
             CurrentStage = TaskProgress.Assignment,
             CreatePullRequest = request.CreatePullRequest,
+            EnableImageGeneration = request.EnableImageGeneration,
+            ImageBudgetUsd = request.ImageBudgetUsd,
+            ImageStatus = request.EnableImageGeneration ? "planning" : null,
             CreatedAt = DateTime.UtcNow
         };
         await using var db = await factory.CreateDbContextAsync();
