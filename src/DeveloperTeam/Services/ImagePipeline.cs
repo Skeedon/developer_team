@@ -70,7 +70,7 @@ public sealed class ImagePipeline(HttpClient http, IConfiguration config)
             await db.SaveChangesAsync(ct);
             return;
         }
-        var assets = ImageAssetManifest.Parse(manifest);
+        var assets = ImageAssetManifest.Parse(manifest, maxAssets: 6);
         if (assets.Count == 0)
         {
             task.ImageStatus = "skipped";
@@ -95,8 +95,41 @@ public sealed class ImagePipeline(HttpClient http, IConfiguration config)
             transparentModel != "gpt-image-1.5" || evaluatorModel != "gpt-4.1-mini")
             throw new InvalidOperationException("Unsupported image model configuration for the current budget estimator.");
 
+
+        // A multi-asset task must have enough budget for every requested car
+        // before even the FIRST paid draft. Previously completed files on
+        // an explicit retry are excluded, so we never regenerate them.
+        var pendingAssets = assets.Where(brief =>
+        {
+            if (!retry) return true;
+            var prior = db.Set<GeneratedAsset>().Local.Any(a =>
+                a.TaskId == task.Id && a.Path == brief.Path && a.Status == "completed");
+            var onDisk = File.Exists(ImageAssetManifest.ResolveSafeOutput(workspace, brief.Path));
+            return !(prior && onDisk);
+        }).ToArray();
+        var minimumBudget = pendingAssets.Sum(a => MinimumRemainingBudget(a.Size, a.Transparent));
+        if (pendingAssets.Length > 0 &&
+            !CanReserve(task.ImageReservedUsd, minimumBudget, task.ImageBudgetUsd))
+            throw new InvalidOperationException(
+                "Insufficient budget for " + pendingAssets.Length +
+                " separate image assets (minimum reserved USD " +
+                minimumBudget.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture) +
+                ", already reserved USD " +
+                task.ImageReservedUsd.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture) +
+                "). Increase the image budget before creating a new multi-car task; " +
+                "no new image API call was made.");
+
         foreach (var brief in assets)
         {
+            if (retry)
+            {
+                var priorAsset = await db.Set<GeneratedAsset>()
+                    .Where(a => a.TaskId == task.Id && a.Path == brief.Path && a.Status == "completed")
+                    .FirstOrDefaultAsync(ct);
+                if (priorAsset is not null &&
+                    File.Exists(ImageAssetManifest.ResolveSafeOutput(workspace, brief.Path)))
+                    continue; // Do not repeat paid generation on a completed file.
+            }
             // Select a supported model BEFORE reserving funds or making a request.
             // Both draft and final use the same transparency-capable image family.
             var selectedDraftModel = ModelForAsset(brief.Transparent, draftModel, transparentModel);

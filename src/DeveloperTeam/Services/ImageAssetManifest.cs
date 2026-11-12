@@ -11,7 +11,7 @@ public static class ImageAssetManifest
         @"^(?:public/assets|wwwroot/assets|assets)/[a-zA-Z0-9][a-zA-Z0-9_./-]{0,155}\.png$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-    public static IReadOnlyList<Asset> Parse(string json, int maxAssets = 1)
+    public static IReadOnlyList<Asset> Parse(string json, int maxAssets = 6)
     {
         if (json.Length > 16000) throw new InvalidOperationException("Image manifest exceeds 16 KB.");
         using var doc = JsonDocument.Parse(json);
@@ -40,11 +40,39 @@ public static class ImageAssetManifest
                 : [];
             if (criteria.Length is < 1 or > 6 || criteria.Any(x => x.Length is < 3 or > 250))
                 throw new InvalidOperationException("Image criteria must contain 1–6 short requirements.");
+            // A generative image model cannot reliably solve multi-car sprite atlas
+            // geometry and exact pixel placement. Avoid charging for impossible work.
+            // Each car must be a separate PNG; layout is the frontend's responsibility.
+            if (LooksLikeCar(path, prompt, criteria) && RequestsCarAtlas(prompt, criteria))
+                throw new InvalidOperationException(
+                    "A single car image cannot contain a multi-car sprite sheet, cell atlas, " +
+                    "or exact pixel coordinates. Declare ONE PNG asset per car and arrange " +
+                    "the sprites using CSS/Canvas after generation. No image API call was made.");
             if (assets.Any(x => x.Path.Equals(path, StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidOperationException("Duplicate image output path.");
             assets.Add(new Asset(path, prompt, criteria, size, transparent));
         }
         return assets;
+    }
+
+
+    private static bool LooksLikeCar(string path, string prompt, IEnumerable<string> criteria)
+    {
+        var text = path + " " + prompt + " " + string.Join(" ", criteria);
+        return Regex.IsMatch(text, @"\b(cars?|vehicles?|automobiles?|автомобил\w*|машин\w*)\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    public static bool RequestsCarAtlas(string prompt, IEnumerable<string> criteria)
+    {
+        var text = prompt + " " + string.Join(" ", criteria);
+        return Regex.IsMatch(text,
+            @"\b(sprite[\s_-]?sheet|sprite[\s_-]?atlas|atlas|grid\s+of\s+(?:cars|vehicles)|" +
+            @"(?:multiple|several|all|three|four|five|six)\s+(?:cars|vehicles)|" +
+            @"cars?\s+in\s+(?:separate\s+)?cells|(?:каждой|каждую)\s+машин\w*\s+в\s+ячейк\w*|" +
+            @"атлас\w*|спрайт[\s-]?лист\w*|сетк\w*\s+машин\w*|" +
+            @"\b[xy]\s*=\s*\d{1,4})\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 
     public static string ResolveSafeOutput(string workspace, string relative)

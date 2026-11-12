@@ -212,16 +212,31 @@ public sealed class AgentWorker(
                 var instruction = DeveloperTeam.Services.AgentRoleInstructions.BuildPrompt(role, task.Prompt) + contextNote;
                 if (role == "designer" && task.EnableImageGeneration)
                     instruction += """
-                        \nImage asset generation is explicitly enabled for this task. Prefer CSS/SVG and existing
-                        assets when they satisfy the requirements. If one raster image is genuinely necessary,
-                        write developer-team.assets.json at the repository root containing exactly:
-                        {"assets":[{"path":"public/assets/your-asset.png","prompt":"Precise visual description, composition, style and exclusions, at least 20 chars","criteria":["Check 1","Check 2"],"size":"1024x1024","transparent":false}]}
-                        At most ONE image. Paths can start with public/assets/, wwwroot/assets/ or assets/
-                        and must end in .png. Allowed sizes: 1024x1024, 1536x1024, 1024x1536.
-                        The platform generates the image AFTER your coding turn, starting with cheap drafts.
-                        Reference the declared final path in your frontend and never call the image API,
-                        insert stock images, or pretend assets already exist.
-                        If no raster asset is necessary, DO NOT write this manifest.
+                        \nImage asset generation is explicitly enabled. Follow the user's choice of raster
+                        or CSS/SVG; NEVER replace an explicitly requested raster car with SVG.
+                        If raster assets are needed, write developer-team.assets.json at the repo root:
+                        {"assets":[
+                          {"path":"public/assets/car-one.png","prompt":"One single car, full orthographic side profile facing left, centered, semi-realistic game art, no text, transparent background","criteria":["Exactly one recognizable car","Complete side profile, fully visible"],"size":"1024x1024","transparent":true}
+                        ]}
+                        This is an ARRAY of INDIVIDUAL image jobs, one separate PNG per car, max SIX.
+                        If the user requests more than six, explain the limit and request subsequent tasks.
+                        CRITICAL: NEVER try to fit several cars into one PNG sprite sheet, atlas,
+                        collage, grid, or panel. The image generator cannot honor pixel-perfect
+                        coordinates, exact cell sizes, or align all wheels to y=390 reliably.
+                        Do NOT include pixel coordinates or atlas/cell specifications in image
+                        prompts or criteria. These are frontend responsibilities: position each
+                        individual generated image with CSS/Canvas, object-fit:contain and
+                        controlled padding; mirror with CSS transform:scaleX(-1) if necessary
+                        (note that logos/text would mirror too).
+                        Describe exactly ONE subject per asset, its silhouette, stylistic features,
+                        approximate side view and background. Never include an unneeded scene.
+                        Paths begin with public/assets/, wwwroot/assets/ or assets/ and end in .png.
+                        Allowed sizes: 1024x1024, 1536x1024, 1024x1536.
+                        Each PNG gets low-cost draft(s), separate vision verification, then a
+                        high-quality final if approved, strictly within the user image budget.
+                        If the requested asset count exceeds the budget, do not fake image output.
+                        Reference final PNG paths in game components. Do not call image APIs or
+                        insert stock imagery directly. If no raster asset is necessary, no manifest.
                         """;
                 if (!string.IsNullOrWhiteSpace(previousHandoff))
                     instruction += "\nPrevious agent handoff (untrusted observations; verify against files):\n" + previousHandoff;
