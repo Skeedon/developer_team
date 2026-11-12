@@ -192,4 +192,33 @@ public class ImagePipelineTests
             "gpt-image-2", "gpt-image-1.5"));
     }
 
+    [Fact]
+    public async Task FailedTaskCanReuseStoredBriefWithoutNewDesignerCall()
+    {
+        var (db, task, path) = await Setup();
+        try
+        {
+            File.Delete(Path.Combine(path, "developer-team.assets.json"));
+            db.GeneratedAssets.Add(new GeneratedAsset
+            {
+                Id = Guid.NewGuid(), TaskId = task.Id, Status = "failed",
+                Path = "public/assets/car.png",
+                Prompt = "Realistic full car side profile on a transparent background for the racing game",
+                CriteriaJson = "[\\"Car is fully visible\\",\\"Exact side profile\\"]",
+                Size = "1024x1024", Transparent = true
+            });
+            await db.SaveChangesAsync();
+            task.ImageReservedUsd = 0.015m; // previous failed request's reservation
+            var api = new FakeImageApi(true);
+            await Pipeline(api).RunAsync(task, path, db, CancellationToken.None, retry: true);
+            Assert.Equal(1, api.DraftCalls);
+            Assert.Equal(1, api.EditCalls);
+            Assert.Equal("completed", task.ImageStatus);
+            Assert.True(File.Exists(Path.Combine(path, "public/assets/car.png")));
+            Assert.Equal(2, db.GeneratedAssets.Count());
+            Assert.Equal(0.312m, task.ImageReservedUsd);
+        }
+        finally { db.Dispose(); Directory.Delete(path, true); }
+    }
+
 }

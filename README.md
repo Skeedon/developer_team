@@ -137,15 +137,19 @@ symlinks, secret-like names, and preexisting files. One raster asset per
 task, at most two draft attempts, and one final attempt. The temporary
 manifest is removed before Git publication.
 
-The worker uses the **Images API** with `gpt-image-2`, quality `low`
-for draft generation. An independent `gpt-4.1-mini` vision evaluation
+The worker uses `gpt-image-2` for opaque assets and switches **transparent
+PNG assets to `gpt-image-1.5`** for both the low-quality draft and high-quality
+final. GPT Image 2 transparency is still unavailable in some API projects,
+where it returns HTTP 400 `invalid_value`. GPT Image 1.5 is an older model
+that supports PNG transparency. An independent `gpt-4.1-mini` vision evaluation
 compares the actual rendered draft with the brief and checklist, requiring
 an explicit pass and score of at least **0.80**. Rejected drafts are
 regenerated only at low quality. If both fail, the task fails safely
 without making any high-quality image request.
 
-A passing draft becomes a base64 data-URL **reference image** for the final
-`gpt-image-2` Images Edit API call with `quality=high`. The final PNG
+A passing draft becomes a base64 data-URL **reference image** for a final
+Images Edit API call with `quality=high`, using the same image model selected
+for the asset's background type. The final PNG
 is written to the declared asset path in the repository and is included
 in the usual Draft PR. Designer and Developer can reference its path;
 the independent code Reviewer still runs afterward. This approach
@@ -159,6 +163,19 @@ the current image stage, generation attempts, vision assessment, preview
 images, image/evaluator token counts and **conservative USD reservations**.
 API routes: `GET /api/tasks/{id}/images` and
 `GET /api/tasks/{id}/images/{assetId}/draft|final`.
+
+**Retry without another coding turn:** if image generation fails before
+tests/review/PR publication (including HTTP 400 for an unsupported background),
+the task card offers **Повторить генерацию (платно)**. This atomically queues a
+new image generation attempt in the **same saved workspace**, preserving
+Designer/Developer code and previously counted text tokens. The original image
+brief is retained on new tasks, or reconstructed from stored `GeneratedAssets`
+metadata for older failed tasks where it was removed. The retry runs new image
+and vision calls, so it is **not free**; existing budget reservations carry over.
+Once generation succeeds, the worker continues normal tests, code review and
+Draft PR publication. The endpoint is
+`POST /api/tasks/{id}/retry-images`. Do not delete the `agent_workspaces`
+Docker volume before retrying.
 
 **Cost controls and limitations:** the worker reserves estimated spending
 before every image or vision call and blocks calls that would exceed the

@@ -137,3 +137,12 @@ test('image-enabled task shows asset control and estimated budget',async()=>{
   assert.match(rendered,/data-kind="images"/);
   assert.match(rendered,/0.027/);
 });
+
+test('failed image task exposes manual retry without opening a new coding task',async()=>{
+  const ui=setup([{...task,status:'failed',enableImageGeneration:true,imageStatus:'failed',
+    pullRequestUrl:null,imageBudgetUsd:0.35,imageReservedUsd:0.015}]);await ui.flush();
+  assert.match(ui.element('#tasks').innerHTML,/data-kind="retry-images"/);
+  await ui.listeners['#tasks:click']({target:{closest:()=>({disabled:false,dataset:{id:'abc',kind:'retry-images'}})}});
+  await ui.flush();
+  assert.ok(ui.calls.some(c=>c.url==='/api/tasks/abc/retry-images'&&c.options.method==='POST'));
+});
