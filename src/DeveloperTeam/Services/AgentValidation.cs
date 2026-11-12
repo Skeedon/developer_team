@@ -16,14 +16,15 @@ public static class AgentValidation
     public static async Task<Result> RunAsync(
         string workspace, IConfiguration config, CommandRunner run, CancellationToken ct,
         Func<int, string, CancellationToken, Task<string>>? fix = null,
-        Action<string, string>? recordTests = null)
+        Action<string, string>? recordTests = null,
+        Func<CancellationToken, Task>? prepareReview = null)
     {
         var maxAttempts = config.GetValue<int?>("Worker:MaxFixAttempts") ?? 2;
         if (maxAttempts < 0) throw new ArgumentOutOfRangeException(nameof(config), "Worker:MaxFixAttempts must be nonnegative.");
         var history = new StringBuilder();
         var tests = await RunTestsAsync(workspace, run, ct);
         Record(0);
-        for (var attempt = 1; tests.Status == "failed" && fix is not null && attempt <= maxAttempts; attempt++)
+        for (var attempt = 1; tests.Status == "failed" && !IsInfrastructureFailure(tests.Log) && fix is not null && attempt <= maxAttempts; attempt++)
         {
             ct.ThrowIfCancellationRequested();
             history.AppendLine($"Fix attempt {attempt}: failure reason:\n{Clip(tests.Log)}");
@@ -45,6 +46,7 @@ public static class AgentValidation
         }
         history.AppendLine("Final test status: " + tests.Status);
         recordTests?.Invoke(tests.Status, history.ToString());
+        if (prepareReview is not null) await prepareReview(ct);
         var review = await RunReviewAsync(workspace, config, run, ct);
         return new Result(tests.Status, history.ToString(), review.Status, review.Log);
 
@@ -54,6 +56,13 @@ public static class AgentValidation
             recordTests?.Invoke(tests.Status, history.ToString());
         }
     }
+
+    // Do not spend extra Codex calls trying to fix a broken test environment.
+    public static bool IsInfrastructureFailure(string log) =>
+        log.Contains("NuGet-Migrations", StringComparison.OrdinalIgnoreCase) ||
+        log.Contains("Access to the path '/.dotnet' is denied", StringComparison.OrdinalIgnoreCase) ||
+        (log.Contains("Permission denied", StringComparison.OrdinalIgnoreCase) &&
+         log.Contains("dotnet", StringComparison.OrdinalIgnoreCase));
 
     private static string Clip(string text) => text.Length <= 12_000 ? text : text[..6_000] + "\n[truncated]\n" + text[^6_000:];
 
@@ -87,6 +96,8 @@ public static class AgentValidation
                     workspace, timeout.Token,
                     new Dictionary<string, string>
                     {
+                        ["HOME"] = "/tmp/dotnet-home",
+                        ["XDG_DATA_HOME"] = "/tmp/dotnet-home/.local/share",
                         ["DOTNET_CLI_HOME"] = "/tmp/dotnet-home",
                         ["NUGET_PACKAGES"] = "/tmp/nuget-packages",
                         ["DOTNET_SKIP_FIRST_TIME_EXPERIENCE"] = "1",
