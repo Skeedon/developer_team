@@ -391,7 +391,7 @@ public sealed class AgentWorker(
                 var result = await RunProcessAsync("codex",
                     ["exec", "--sandbox", "workspace-write", "--json", "--ephemeral",
                         "-C", workspace, "--model", model,
-                        "-c", "model_provider=\\"openai\\"", instruction], workspace, ct,
+                        "-c", "model_provider=\"openai\", instruction], workspace, ct,
                     new Dictionary<string, string>
                     {
                         ["CODEX_API_KEY"] = apiKey,
