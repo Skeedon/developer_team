@@ -119,6 +119,7 @@ if (role.Equals("api", StringComparison.OrdinalIgnoreCase))
     app.UseDefaultFiles();
     app.UseStaticFiles();
     app.MapTaskEndpoints();
+    app.MapImageEndpoints();
     app.MapAnalyticsEndpoints();
     app.MapArtifactEndpoints();
 }

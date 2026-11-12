@@ -184,7 +184,6 @@ public sealed class ImagePipeline(HttpClient http, IConfiguration config)
         return await ImageRequestAsync(key, "images/edits", new
         {
             model, prompt, size = brief.Size, quality = "high",
-            input_fidelity = "high",
             background = brief.Transparent ? "transparent" : "opaque",
             output_format = "png",
             images = new[] { new { image_url = "data:image/png;base64," + Convert.ToBase64String(reference) } }
