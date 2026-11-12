@@ -36,7 +36,7 @@ document.querySelector('#showMemory').addEventListener('click', async () => {
     document.querySelector('#details-title').focus({preventScroll:true});
   } catch (e) { message.textContent = 'Ошибка памяти: ' + e.message; }
 });
-const statuses = {queued:'В очереди',running:'В работе',publishing:'Публикация PR',publish_queued:'PR в очереди',completed:'Завершено',failed:'Ошибка',publish_failed:'Ошибка публикации'};
+const statuses = {queued:'В очереди',running:'В работе',publishing:'Публикация PR',publish_queued:'PR в очереди',completed:'Завершено',failed:'Ошибка',publish_failed:'Ошибка публикации',review_fix_queued:'Исправление в очереди',review_fixing:'Исправление замечаний',review_fix_failed:'Ошибка исправления'};
 const checkStatuses = {pending:'Ожидание',passed:'Пройдены',failed:'Ошибка',reviewed:'Проверено',skipped:'Пропущено',not_run:'Не запускались',running:'В работе'};
 // API integration contract: currentStage = assignment | development | testing | review | publication.
 // The task status determines whether the current stage is running, paused or failed.
@@ -49,7 +49,7 @@ const workflowStages = [
 ];
 function taskWorkflow(task) {
   const completed = task.status === 'completed';
-  const failed = ['failed', 'publish_failed'].includes(task.status);
+  const failed = ['failed', 'publish_failed', 'review_fix_failed'].includes(task.status);
   const publishing = ['publishing', 'publish_queued', 'publish_failed'].includes(task.status);
   let stage = workflowStages.findIndex(([key]) => key === task.currentStage);
   if (completed) stage = task.createPullRequest || task.pullRequestUrl ? 4 : 3;
@@ -64,7 +64,7 @@ function taskWorkflow(task) {
     if (unknown) return 'pending';
     if (completed || index < stage) return 'done';
     if (index > stage) return 'pending';
-    return failed ? 'error' : ['queued', 'publish_queued'].includes(task.status) ? 'queued' : 'active';
+    return failed ? 'error' : ['queued', 'publish_queued', 'review_fix_queued'].includes(task.status) ? 'queued' : 'active';
   });
   return {stage, states, unknown, completed, failed};
 }
@@ -108,9 +108,9 @@ async function loadTasks() {
   try {
     const tasks = await (await read('/api/tasks')).json();
     document.querySelector('#taskCount').textContent = tasks.length;
-    document.querySelector('#activeCount').textContent = tasks.filter(t => ['queued','running','publishing','publish_queued'].includes(t.status)).length;
+    document.querySelector('#activeCount').textContent = tasks.filter(t => ['queued','running','publishing','publish_queued','review_fix_queued','review_fixing'].includes(t.status)).length;
     document.querySelector('#completedCount').textContent = tasks.filter(t => t.status === 'completed').length;
-    document.querySelector('#failedCount').textContent = tasks.filter(t => ['failed','publish_failed'].includes(t.status)).length;
+    document.querySelector('#failedCount').textContent = tasks.filter(t => ['failed','publish_failed','review_fix_failed'].includes(t.status)).length;
     const snapshot = JSON.stringify(tasks);
     if (lastTasks === snapshot && !root.querySelector('.load-error')) return;
     lastTasks = snapshot;
@@ -123,8 +123,15 @@ async function loadTasks() {
       const prLink = t.pullRequestUrl ? '<a class="action" target="_blank" rel="noopener noreferrer" href="' + escapeHtml(t.pullRequestUrl) + '">Открыть PR</a>' : '';
       const retryButton = t.createPullRequest && ['failed','publish_failed'].includes(t.status) && !t.pullRequestUrl
         ? '<button class="action" data-id="' + id + '" data-kind="retry">Повторить публикацию PR</button>' : '';
+      const reviewTag = t.hasReviewFindings
+        ? '<span class="check" style="color:#f4b977;border-color:#a8733c">⚠ Reviewer нашёл замечания' +
+          (t.reviewFixAttempts ? ' · попыток: ' + Number(t.reviewFixAttempts) : '') + '</span>'
+        : t.reviewStatus === 'reviewed' ? '<span class="check">✓ Reviewer: без замечаний</span>' : '';
+      const fixReviewButton = t.hasReviewFindings && t.pullRequestUrl &&
+        ['completed','review_fix_failed'].includes(t.status) && (t.reviewFixAttempts || 0) < 3
+        ? '<button class="action" data-id="' + id + '" data-kind="fix-review">Исправить замечания</button>' : '';
       const checksLabel = '<div class="checks"><span class="check">Тесты: ' + escapeHtml(checkStatuses[t.testStatus] || t.testStatus || '—') +
-        '</span><span class="check">Reviewer: ' + escapeHtml(checkStatuses[t.reviewStatus] || t.reviewStatus || '—') + '</span></div>';
+        '</span><span class="check">Reviewer: ' + escapeHtml(checkStatuses[t.reviewStatus] || t.reviewStatus || '—') + '</span>' + reviewTag + '</div>';
       const tokens = '<p class="tokens">Токены · Dev: ' + (t.hasDeveloperMetrics ? escapeHtml(t.developerInputTokens.toLocaleString('ru-RU')) +
         ' / ' + escapeHtml(t.developerOutputTokens.toLocaleString('ru-RU')) : 'нет данных') +
         ' · Designer: ' + (t.hasDesignerMetrics ? escapeHtml(t.designerInputTokens.toLocaleString('ru-RU')) +
@@ -139,7 +146,7 @@ async function loadTasks() {
         '<button class="action" data-id="' + id + '" data-kind="log">Лог</button>' +
         '<button class="action" data-id="' + id + '" data-kind="diff">Diff</button>' +
         '<button class="action" data-id="' + id + '" data-kind="checks">Проверки</button>' +
-        (downloadable ? '<a class="action" href="/api/tasks/' + id + '/download">Скачать ZIP</a>' : '') + prLink + retryButton +
+        (downloadable ? '<a class="action" href="/api/tasks/' + id + '/download">Скачать ZIP</a>' : '') + prLink + retryButton + fixReviewButton +
         '</div></article>';
     }).join('');
     if (focused) {
@@ -167,6 +174,15 @@ root.addEventListener('click', e => {
         await loadTasks();
       })
       .catch(err => { message.textContent = 'Ошибка: ' + err.message; btn.disabled = false; });
+  } else if (btn.dataset.kind === 'fix-review') {
+    btn.disabled = true;
+    fetch('/api/tasks/' + encodeURIComponent(btn.dataset.id) + '/fix-review', {method:'POST'})
+      .then(async response => {
+        if (!response.ok) throw Error(await response.text());
+        message.textContent = 'Исправление замечаний Reviewer поставлено в очередь. Это запустит Codex и потратит токены.';
+        await loadTasks();
+      })
+      .catch(err => { message.textContent = 'Ошибка исправления: ' + err.message; btn.disabled = false; });
   } else showText(btn.dataset.id, btn.dataset.kind);
 });
 document.querySelector('#refresh').addEventListener('click', loadTasks);

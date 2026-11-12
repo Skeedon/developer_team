@@ -66,6 +66,13 @@ await using (var db = await app.Services.GetRequiredService<IDbContextFactory<Ag
             ELSE 'developer' END ||
             CASE WHEN "ReviewStatus" IS NOT NULL THEN ',reviewer' ELSE '' END
         WHERE "Participants" = '';
+        -- Make feedback from already completed tasks visible after upgrading.
+        UPDATE "Tasks" SET "HasReviewFindings" = TRUE
+        WHERE "ReviewStatus" = 'reviewed' AND "ReviewLog" IS NOT NULL
+          AND btrim("ReviewLog") <> ''
+          AND lower(btrim(btrim("ReviewLog"), '.')) <> 'no actionable findings'
+          AND "HasReviewFindings" = FALSE
+          AND "ReviewFixAttempts" = 0;
         CREATE INDEX IF NOT EXISTS "IX_Tasks_CreatedAt" ON "Tasks" ("CreatedAt");
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "InitialDiff" text NULL;
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "TestStatus" text NULL;

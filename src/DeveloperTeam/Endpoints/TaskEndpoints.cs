@@ -87,7 +87,7 @@ public static class TaskEndpoints
         await using var db = await factory.CreateDbContextAsync();
         // Atomic claim prevents double clicks, concurrent workers, or re-reviewing a failed task.
         var changed = await db.Tasks.Where(t => t.Id == id &&
-            t.Status == "completed" && t.ReviewStatus == "reviewed" && t.HasReviewFindings &&
+            (t.Status == "completed" || t.Status == "review_fix_failed") && t.ReviewStatus == "reviewed" && t.HasReviewFindings &&
             t.ReviewFixAttempts < 3 && t.WorkspacePath != null && t.Diff != null && t.Diff != "" &&
             t.PullRequestUrl != null && t.CreatePullRequest)
             .ExecuteUpdateAsync(s => s.SetProperty(t => t.Status, "review_fix_queued")
