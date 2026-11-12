@@ -17,4 +17,8 @@ public sealed class AgentTask
     public bool CreatePullRequest { get; set; }
     public string? PullRequestUrl { get; set; }
     public string? PullRequestBranch { get; set; }
+    public string? TestStatus { get; set; }
+    public string? TestLog { get; set; }
+    public string? ReviewStatus { get; set; }
+    public string? ReviewLog { get; set; }
 }

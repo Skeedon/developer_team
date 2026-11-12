@@ -60,8 +60,13 @@
     async function showText(id, kind) {
       try {
         const response = await read('/api/tasks/' + encodeURIComponent(id) + '/' + kind);
-        content.textContent = await response.text();
-        document.querySelector('#details-title').textContent = kind === 'log' ? 'Лог агента' : 'Git diff';
+        if (kind === 'checks') {
+          const checks = await response.json();
+          content.textContent = 'TESTS: ' + (checks.testStatus || 'pending') + '\\n' +
+            (checks.testLog || '') + '\\n\\nREVIEWER: ' + (checks.reviewStatus || 'pending') +
+            '\\n' + (checks.reviewLog || '');
+        } else content.textContent = await response.text();
+        document.querySelector('#details-title').textContent = kind === 'log' ? 'Лог агента' : kind === 'checks' ? 'Проверки и Reviewer' : 'Git diff';
         details.hidden = false;
         details.scrollIntoView({behavior:'smooth'});
       } catch (e) { message.textContent = e.message; }
@@ -78,13 +83,15 @@
           const prLink = t.pullRequestUrl ? '<a class="action" target="_blank" rel="noopener noreferrer" href="' + escapeHtml(t.pullRequestUrl) + '">Открыть PR</a>' : '';
           const retryButton = t.createPullRequest && ['failed','publish_failed'].includes(t.status) && !t.pullRequestUrl
             ? '<button class="action" data-id="' + id + '" data-kind="retry">Повторить публикацию PR</button>' : '';
+          const checksLabel = '<span class="muted">Тесты: ' + escapeHtml(t.testStatus || '—') + ' · Reviewer: ' + escapeHtml(t.reviewStatus || '—') + '</span>';
           const error = t.error ? '<p class="failed">' + escapeHtml(t.error) + '</p>' : '';
           return '<article class="task"><strong class="status ' + status + '">' + status + '</strong>' +
-            '<p>' + escapeHtml(t.prompt) + '</p>' +
+            '<p>' + escapeHtml(t.prompt) + '</p>' + '<p>' + checksLabel + '</p>' +
             '<p class="muted">' + escapeHtml(t.repositoryUrl) + ' · ' + escapeHtml(t.baseBranch || 'default') + ' · ' +
             escapeHtml(new Date(t.createdAt).toLocaleString('ru-RU')) + '</p>' + error +
             '<button class="action" data-id="' + id + '" data-kind="log">Лог</button>' +
             '<button class="action" data-id="' + id + '" data-kind="diff">Diff</button>' +
+            '<button class="action" data-id="' + id + '" data-kind="checks">Проверки</button>' +
             (downloadable ? '<a class="action" href="/api/tasks/' + id + '/download">Скачать ZIP</a>' : '') + prLink + retryButton +
             '</article>';
         }).join('');

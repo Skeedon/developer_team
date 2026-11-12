@@ -16,7 +16,7 @@ public static class TaskEndpoints
         return Results.Ok(await db.Tasks.AsNoTracking()
             .OrderByDescending(x => x.CreatedAt)
             .Take(100)
-            .Select(x => new { x.Id, x.RepositoryUrl, x.BaseBranch, x.Prompt, x.Status, x.CreatedAt, x.StartedAt, x.FinishedAt, x.Error, x.CreatePullRequest, x.PullRequestUrl })
+            .Select(x => new { x.Id, x.RepositoryUrl, x.BaseBranch, x.Prompt, x.Status, x.CreatedAt, x.StartedAt, x.FinishedAt, x.Error, x.CreatePullRequest, x.PullRequestUrl, x.TestStatus, x.ReviewStatus })
             .ToListAsync());
     });
 
@@ -29,6 +29,7 @@ public static class TaskEndpoints
             task.Id, task.RepositoryUrl, task.BaseBranch, task.Prompt, task.Status, task.CreatedAt,
             task.StartedAt, task.FinishedAt, task.Error, task.WorkspacePath,
             task.CreatePullRequest, task.PullRequestUrl, task.PullRequestBranch,
+            task.TestStatus, task.ReviewStatus,
             HasDiff = !string.IsNullOrWhiteSpace(task.Diff)
         });
     });
@@ -45,6 +46,15 @@ public static class TaskEndpoints
         await using var db = await factory.CreateDbContextAsync();
         var task = await db.Tasks.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
         return task is null ? Results.NotFound() : Results.Text(task.Diff ?? "", "text/plain");
+    });
+
+    group.MapGet("/{id:guid}/checks", async (Guid id, IDbContextFactory<AgentDbContext> factory) =>
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        var task = await db.Tasks.AsNoTracking().Where(t => t.Id == id)
+            .Select(t => new { t.TestStatus, t.TestLog, t.ReviewStatus, t.ReviewLog })
+            .SingleOrDefaultAsync();
+        return task is null ? Results.NotFound() : Results.Ok(task);
     });
 
     group.MapPost("/{id:guid}/retry-publish", async (Guid id, IDbContextFactory<AgentDbContext> factory) =>

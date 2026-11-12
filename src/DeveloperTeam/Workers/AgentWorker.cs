@@ -117,6 +117,17 @@ public sealed class AgentWorker(
             transcript.AppendLine("Git status:" + Environment.NewLine + status.Output);
             task.Diff = Limit(diff.Output, 250_000);
 
+            // Independent checks are run after Codex finishes, before GitHub publication.
+            // Test failures do not hide the diff: the PR remains a draft with explicit results.
+            var validation = await DeveloperTeam.Services.AgentValidation.RunAsync(
+                workspace, config, RunProcessAsync, token);
+            task.TestStatus = validation.TestStatus;
+            task.TestLog = Limit(validation.TestLog, 60_000);
+            task.ReviewStatus = validation.ReviewStatus;
+            task.ReviewLog = Limit(validation.ReviewLog, 60_000);
+            transcript.AppendLine("Tests: " + task.TestStatus + Environment.NewLine + task.TestLog);
+            transcript.AppendLine("Reviewer: " + task.ReviewStatus + Environment.NewLine + task.ReviewLog);
+
             if (task.CreatePullRequest)
             {
                 task.Status = "publishing";
@@ -130,6 +141,7 @@ public sealed class AgentWorker(
                 task.PullRequestUrl = published.Url;
                 task.PullRequestBranch = published.Branch;
                 transcript.AppendLine("Draft pull request: " + published.Url);
+                await TryPublishReportAsync(task, token);
             }
             task.Status = "completed";
         }
@@ -158,6 +170,16 @@ public sealed class AgentWorker(
         }
     }
 
+    private async Task TryPublishReportAsync(AgentTask task, CancellationToken token)
+    {
+        try { await publisher.PostReviewReportAsync(task, token); }
+        catch (Exception ex)
+        {
+            // Publishing a report should never invalidate an already created PR.
+            logger.LogWarning(ex, "Could not post test/reviewer report for task {TaskId}", task.Id);
+        }
+    }
+
     // Publish a saved workspace without executing Codex or spending API tokens.
     private async Task RetryPublishAsync(Guid id, CancellationToken token)
     {
@@ -176,6 +198,7 @@ public sealed class AgentWorker(
             task.PullRequestBranch = result.Branch;
             task.Status = "completed";
             task.Error = null;
+            await TryPublishReportAsync(task, token);
             task.Log = Limit((task.Log ?? "") + "\nPR publication retried: " + result.Url, 200_000);
         }
         catch (Exception ex)

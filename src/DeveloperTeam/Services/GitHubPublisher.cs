@@ -95,6 +95,29 @@ public sealed class GitHubPublisher(HttpClient client, IConfiguration configurat
             branch);
     }
 
+    public async Task PostReviewReportAsync(AgentTask task, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(task.PullRequestUrl)) return;
+        var match = Regex.Match(task.PullRequestUrl,
+            @"^https://github\.com/(?<owner>[a-zA-Z0-9-]+)/(?<repo>[a-zA-Z0-9_.-]+)/pull/(?<number>[0-9]+)$");
+        if (!match.Success) throw new InvalidOperationException("Unexpected PR URL.");
+        var token = configuration["GitHub:Token"]
+            ?? throw new InvalidOperationException("GitHub:Token missing.");
+        var api = $"https://api.github.com/repos/{match.Groups["owner"].Value}/{match.Groups["repo"].Value}/issues/{match.Groups["number"].Value}/comments";
+        var review = task.ReviewLog ?? "Reviewer did not run.";
+        var tests = task.TestLog ?? "Test runner did not run.";
+        var body = "### Developer Team — independent checks\n\n" +
+            $"**Tests:** {task.TestStatus ?? "not run"}\n\n" +
+            $"**Reviewer:** {task.ReviewStatus ?? "not run"}\n\n" +
+            "<details><summary>Test output</summary>\n\n```text\n" +
+            tests.Replace("```", "` ` `") + "\n```\n</details>\n\n" +
+            "<details><summary>Reviewer findings</summary>\n\n" +
+            review + "\n</details>\n\n" +
+            "Automated feedback is informational; a human must review before merging.";
+        using var response = await ApiAsync(HttpMethod.Post, api, token,
+            new { body = body[..Math.Min(body.Length, 50000)] }, ct);
+    }
+
     private async Task<HttpResponseMessage> ApiAsync(
         HttpMethod method, string uri, string token, object? payload, CancellationToken ct)
     {

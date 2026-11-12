@@ -5,7 +5,7 @@ RUN dotnet restore src/DeveloperTeam/DeveloperTeam.csproj
 COPY src/DeveloperTeam/ src/DeveloperTeam/
 RUN dotnet publish src/DeveloperTeam/DeveloperTeam.csproj -c Release -o /app/publish --no-restore
 
-FROM mcr.microsoft.com/dotnet/aspnet:9.0
+FROM mcr.microsoft.com/dotnet/sdk:9.0
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git nodejs npm ca-certificates \
     && npm install -g @openai/codex \
