@@ -502,6 +502,8 @@ public sealed class AgentWorker(
             task.Status = "publishing";
             task.CurrentStage = TaskProgress.Publication;
             await db.SaveChangesAsync(token);
+            // The PR could have been merged while Codex and Reviewer were running.
+            await publisher.EnsureOpenPullRequestAsync(task, token);
             var published = await publisher.PublishAsync(task, workspace, token);
             task.PullRequestUrl = published.Url;
             task.PullRequestBranch = published.Branch;
