@@ -37,7 +37,7 @@ document.querySelector('#showMemory').addEventListener('click', async () => {
   } catch (e) { message.textContent = 'Ошибка памяти: ' + e.message; }
 });
 const statuses = {queued:'В очереди',running:'В работе',publishing:'Публикация PR',publish_queued:'PR в очереди',completed:'Завершено',failed:'Ошибка',publish_failed:'Ошибка публикации',review_fix_queued:'Исправление в очереди',review_fixing:'Исправление замечаний',review_fix_failed:'Ошибка исправления'};
-const checkStatuses = {pending:'Ожидание',passed:'Пройдены',failed:'Ошибка',reviewed:'Проверено',skipped:'Пропущено',not_run:'Не запускались',running:'В работе'};
+const checkStatuses = {pending:'Ожидание',passed:'Пройдены',failed:'Ошибка',reviewed:'Проверено',fixing:'Исправление замечаний',skipped:'Пропущено',not_run:'Не запускались',running:'В работе'};
 // API integration contract: currentStage = assignment | development | testing | review | publication.
 // The task status determines whether the current stage is running, paused or failed.
 const workflowStages = [

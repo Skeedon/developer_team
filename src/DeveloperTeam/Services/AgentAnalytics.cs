@@ -55,7 +55,7 @@ public static class AgentAnalytics
         {
             Total = g.Count(),
             Successful = g.Count(t => t.Status == "completed"),
-            Failed = g.Count(t => t.Status == "failed" || t.Status == "publish_failed"),
+            Failed = g.Count(t => t.Status == "failed" || t.Status == "publish_failed" || t.Status == "review_fix_failed"),
             AverageDurationSeconds = g.Average(t => t.StartedAt != null && t.FinishedAt >= t.StartedAt
                 ? (double?)(t.FinishedAt.Value - t.StartedAt.Value).TotalSeconds : null),
             DeveloperMeasuredTasks = g.Count(t => t.HasDeveloperMetrics),
