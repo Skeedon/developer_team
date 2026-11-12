@@ -51,6 +51,31 @@ the same Codex model as Developer; this changes the role instructions, not the m
 No visual screenshot-based verification is integrated yet, so the user should
 inspect the Draft PR's frontend changes before merging.
 
+## Automatic team assignment and token tracking
+
+New tasks are submitted with `role: auto` (also the default if the API caller
+omits `role`). The platform chooses who participates without a separate paid
+routing request: UI/design requests go to **Designer**, coding/backend requests
+go to **Developer**, and mixed UI-plus-backend requests invoke Designer then
+Developer sequentially inside one task workspace. Unclear requests default to
+Developer. This initial routing is keyword-based and can misclassify ambiguous
+phrasing; explicit `role: developer` or `role: designer` remains supported for
+older API clients.
+
+The independent Reviewer and tests still run after coding, and Draft PR creation
+remains opt-in. Tasks expose `Participants` (the agents that were scheduled and
+Reviewer when its check runs). The dashboard displays actual Developer, Designer,
+and Reviewer token usage separately, including cached input and output tokens.
+Developer/Designer repair attempts are attributed to the agent that ran them.
+Analytics includes all three roles. Previously recorded Designer-only tasks are
+migrated from the old Developer token columns exactly once, while old tasks with
+missing usage remain marked as unknown.
+
+**No automatic image generation is included.** Designer implements UI directly
+in code with the same model configuration as Developer. No extra model call is
+made solely to assign agents. Mixed tasks may cost more because two coding turns
+are executed; the existing automatic fix/review flow is shared, not duplicated.
+
 ## Automated tests and independent Reviewer
 
 After Codex edits the repository, the worker executes a bounded `dotnet test` run
