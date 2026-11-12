@@ -20,13 +20,7 @@
       <section class="panel composer" aria-labelledby="new-task-title">
         <div class="section-heading"><div><p class="eyebrow">СОЗДАНИЕ</p><h2 id="new-task-title">Новая задача</h2></div><span class="section-icon" aria-hidden="true">＋</span></div>
         <form id="form">
-          <fieldset class="role-field"><legend>01 <span>Выберите исполнителя</span></legend>
-            <div class="role-options">
-              <label class="role-card"><input type="radio" name="agentRole" value="developer" checked><span class="role-symbol" aria-hidden="true">&lt;/&gt;</span><span><strong>Developer</strong><small>Код и функциональность</small></span><span class="radio-indicator" aria-hidden="true"></span></label>
-              <label class="role-card"><input type="radio" name="agentRole" value="designer"><span class="role-symbol designer-symbol" aria-hidden="true">◇</span><span><strong>Designer</strong><small>Интерфейсы и UI/UX</small></span><span class="radio-indicator" aria-hidden="true"></span></label>
-            </div>
-            <p id="roleHint" class="field-hint" aria-live="polite">Developer работает над логикой и функциональностью проекта.</p>
-          </fieldset>
+          <p class="field-hint" role="note"><strong>Исполнители назначаются автоматически.</strong> Developer отвечает за код, Designer — за интерфейс. Reviewer проверяет изменения.</p>
           <fieldset><legend>02 <span>Настройте рабочее пространство</span></legend>
             <label for="repo">GitHub-репозиторий <span class="optional">публичный</span></label>
             <input id="repo" required type="url" value="https://github.com/Skeedon/developer_team" spellcheck="false" autocomplete="url">

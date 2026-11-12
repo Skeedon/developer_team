@@ -23,14 +23,6 @@ async function showText(id, kind) {
     document.querySelector('#details-title').focus({preventScroll:true});
   } catch (e) { message.textContent = e.message; }
 }
-document.querySelectorAll('input[name=agentRole]').forEach(input => input.addEventListener('change', e => {
-  document.querySelector('#roleHint').textContent = e.target.value === 'designer'
-    ? 'Designer работает над интерфейсом: компоненты, стили, адаптивность и анимации.'
-    : 'Developer работает над логикой и функциональностью проекта.';
-  document.querySelector('#prompt').placeholder = e.target.value === 'designer'
-    ? 'Улучши дизайн главной страницы: отступы, типографика, адаптивность, состояния кнопок…'
-    : 'Добавь тесты к классу Calculator, запусти проверки и исправь ошибки…';
-}));
 window.showTaskText = showText;
 document.querySelector('#showMemory').addEventListener('click', async () => {
   try {
@@ -76,11 +68,13 @@ async function loadTasks() {
         '</span><span class="check">Reviewer: ' + escapeHtml(checkStatuses[t.reviewStatus] || t.reviewStatus || '—') + '</span></div>';
       const tokens = '<p class="tokens">Токены · Dev: ' + (t.hasDeveloperMetrics ? escapeHtml(t.developerInputTokens.toLocaleString('ru-RU')) +
         ' / ' + escapeHtml(t.developerOutputTokens.toLocaleString('ru-RU')) : 'нет данных') +
+        ' · Designer: ' + (t.hasDesignerMetrics ? escapeHtml(t.designerInputTokens.toLocaleString('ru-RU')) +
+        ' / ' + escapeHtml(t.designerOutputTokens.toLocaleString('ru-RU')) : 'нет данных') +
         ' · Review: ' + (t.hasReviewerMetrics ? escapeHtml(t.reviewerInputTokens.toLocaleString('ru-RU')) +
         ' / ' + escapeHtml(t.reviewerOutputTokens.toLocaleString('ru-RU')) : 'нет данных') + ' <span>(вход / выход)</span></p>';
       const error = t.error ? '<p class="failed task-error">' + escapeHtml(t.error) + '</p>' : '';
       const repository = t.repositoryUrl.replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/, '');
-      return '<article class="task"><div class="task-header"><span class="agent-label"><span class="agent-icon" aria-hidden="true">' + (t.role === 'designer' ? '◇' : '&lt;/&gt;') + '</span>' + (t.role === 'designer' ? 'Designer' : 'Developer') + '</span><span class="status ' + status + '">' + escapeHtml(statuses[t.status] || t.status) + '</span></div>' +
+      return '<article class="task"><div class="task-header"><span class="agent-label"><span class="agent-icon" aria-hidden="true">' + '✳' + '</span>' + escapeHtml((t.participants || t.role || 'developer').split(',').join(' · ')) + '</span><span class="status ' + status + '">' + escapeHtml(statuses[t.status] || t.status) + '</span></div>' +
         '<h3>' + escapeHtml(t.prompt) + '</h3><div class="task-meta"><span>' + escapeHtml(repository) + '</span><span>⑂ ' + escapeHtml(t.baseBranch || 'default') + '</span><time datetime="' + escapeHtml(t.createdAt) + '">' +
         escapeHtml(new Date(t.createdAt).toLocaleString('ru-RU')) + '</time></div>' + checksLabel + tokens + error + '<div class="task-actions">' +
         '<button class="action" data-id="' + id + '" data-kind="log">Лог</button>' +
@@ -126,7 +120,7 @@ document.querySelector('#form').addEventListener('submit', async e => {
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({repositoryUrl:document.querySelector('#repo').value,
         prompt:document.querySelector('#prompt').value,
-        role:document.querySelector('input[name=agentRole]:checked').value,
+        role:'auto',
         baseBranch:document.querySelector('#baseBranch').value.trim() || null,
         createPullRequest:document.querySelector('#pr').checked})
     });
