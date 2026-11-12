@@ -6,8 +6,10 @@ services:
     environment:
       POSTGRES_DB: developer_team
       POSTGRES_USER: agent
-      POSTGRES_PASSWORD: developer-team-local-only
+      POSTGRES_PASSWORD: PostgresPasswordPollo
       PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "127.0.0.1:5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -39,8 +41,13 @@ services:
       APP_ROLE: worker
       CODEX_HOME: /tmp/codex-home
     volumes:
-      - agent_workspaces:/workspaces
-      - ./config/appsettings.Local.json:/app/appsettings.Local.json:ro
+    - agent_workspaces:/workspaces
+    - type: bind
+      source: ./config/appsettings.Local.json
+      target: /app/appsettings.Local.json
+      read_only: true
+      bind:
+        create_host_path: false
     depends_on:
       postgres:
         condition: service_healthy
