@@ -83,7 +83,12 @@
           const prLink = t.pullRequestUrl ? '<a class="action" target="_blank" rel="noopener noreferrer" href="' + escapeHtml(t.pullRequestUrl) + '">Открыть PR</a>' : '';
           const retryButton = t.createPullRequest && ['failed','publish_failed'].includes(t.status) && !t.pullRequestUrl
             ? '<button class="action" data-id="' + id + '" data-kind="retry">Повторить публикацию PR</button>' : '';
-          const checksLabel = '<span class="muted">Тесты: ' + escapeHtml(t.testStatus || '—') + ' · Reviewer: ' + escapeHtml(t.reviewStatus || '—') + '</span>';
+          const checksLabel = '<span class="muted">Тесты: ' + escapeHtml(t.testStatus || '—') +
+            ' · Reviewer: ' + escapeHtml(t.reviewStatus || '—') +
+            ' · Токены Dev: ' + escapeHtml((t.developerInputTokens || 0).toLocaleString('ru-RU')) +
+            '/' + escapeHtml((t.developerOutputTokens || 0).toLocaleString('ru-RU')) +
+            ' · Review: ' + escapeHtml((t.reviewerInputTokens || 0).toLocaleString('ru-RU')) +
+            '/' + escapeHtml((t.reviewerOutputTokens || 0).toLocaleString('ru-RU')) + ' (вход/выход)</span>';
           const error = t.error ? '<p class="failed">' + escapeHtml(t.error) + '</p>' : '';
           return '<article class="task"><strong class="status ' + status + '">' + status + '</strong>' +
             '<p>' + escapeHtml(t.prompt) + '</p>' + '<p>' + checksLabel + '</p>' +

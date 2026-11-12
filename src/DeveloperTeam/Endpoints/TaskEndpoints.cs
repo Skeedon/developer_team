@@ -16,7 +16,7 @@ public static class TaskEndpoints
         return Results.Ok(await db.Tasks.AsNoTracking()
             .OrderByDescending(x => x.CreatedAt)
             .Take(100)
-            .Select(x => new { x.Id, x.RepositoryUrl, x.BaseBranch, x.Prompt, x.Status, x.CreatedAt, x.StartedAt, x.FinishedAt, x.Error, x.CreatePullRequest, x.PullRequestUrl, x.TestStatus, x.ReviewStatus })
+            .Select(x => new { x.Id, x.RepositoryUrl, x.BaseBranch, x.Prompt, x.Status, x.CreatedAt, x.StartedAt, x.FinishedAt, x.Error, x.CreatePullRequest, x.PullRequestUrl, x.TestStatus, x.ReviewStatus, x.DeveloperInputTokens, x.DeveloperOutputTokens, x.ReviewerInputTokens, x.ReviewerOutputTokens })
             .ToListAsync());
     });
 
@@ -30,6 +30,8 @@ public static class TaskEndpoints
             task.StartedAt, task.FinishedAt, task.Error, task.WorkspacePath,
             task.CreatePullRequest, task.PullRequestUrl, task.PullRequestBranch,
             task.TestStatus, task.ReviewStatus,
+            task.DeveloperInputTokens, task.DeveloperCachedTokens, task.DeveloperOutputTokens,
+            task.ReviewerInputTokens, task.ReviewerCachedTokens, task.ReviewerOutputTokens,
             HasDiff = !string.IsNullOrWhiteSpace(task.Diff)
         });
     });

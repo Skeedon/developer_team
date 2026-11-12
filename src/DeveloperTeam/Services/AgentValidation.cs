@@ -147,8 +147,8 @@ public static class AgentValidation
         const string emptyMemory = "(First review of this repository: no previous notes.)";
         var notes = string.IsNullOrWhiteSpace(reviewerMemory)
             ? emptyMemory : reviewerMemory[..Math.Min(reviewerMemory.Length, 4000)];
-        prompt += "\\n<untrusted-review-memory>\\n" + notes +
-            "\\n</untrusted-review-memory>\\n";
+        prompt += "\n<untrusted-review-memory>\n" + notes +
+            "\n</untrusted-review-memory>\n";
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);

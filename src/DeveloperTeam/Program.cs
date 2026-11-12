@@ -27,6 +27,12 @@ await using (var db = await app.Services.GetRequiredService<IDbContextFactory<Ag
             "Notes" text NOT NULL,
             "UpdatedAt" timestamp with time zone NOT NULL
         );
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "DeveloperInputTokens" bigint NOT NULL DEFAULT 0;
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "DeveloperCachedTokens" bigint NOT NULL DEFAULT 0;
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "DeveloperOutputTokens" bigint NOT NULL DEFAULT 0;
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "ReviewerInputTokens" bigint NOT NULL DEFAULT 0;
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "ReviewerCachedTokens" bigint NOT NULL DEFAULT 0;
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "ReviewerOutputTokens" bigint NOT NULL DEFAULT 0;
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "InitialDiff" text NULL;
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "TestStatus" text NULL;
         ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "TestLog" text NULL;

@@ -95,6 +95,8 @@ public sealed class AgentWorker(
             var prompt = "You are a coding agent. Work only inside this repository. " +
                 "Implement the requested change, run relevant checks when possible, and do not push or publish anything. " +
                 "Do not read secrets or attempt to access files outside this workspace. Task: " + task.Prompt;
+            DeveloperTeam.Services.CodexTokenUsage developerUsage = default;
+            DeveloperTeam.Services.CodexTokenUsage reviewerUsage = default;
             async Task<string> DevelopAsync(string instruction, CancellationToken ct)
             {
                 var result = await RunProcessAsync("codex",
@@ -108,6 +110,7 @@ public sealed class AgentWorker(
                         ["OPENAI_BASE_URL"] = "https://api.openai.com/v1"
                     });
                 transcript.AppendLine(result.Output);
+                developerUsage += DeveloperTeam.Services.CodexTokenUsage.FromNdjson(result.Output);
                 if (result.ExitCode != 0)
                     throw new InvalidOperationException($"Codex returned exit code {result.ExitCode}: {result.Output}");
                 return result.Output;
@@ -130,7 +133,14 @@ public sealed class AgentWorker(
                 .Where(m => m.RepositoryKey == DeveloperTeam.Services.ReviewerMemoryKey.FromUrl(task.RepositoryUrl))
                 .Select(m => m.Notes).SingleOrDefaultAsync(token);
             var validation = await DeveloperTeam.Services.AgentValidation.RunAsync(
-                workspace, config, RunProcessAsync, token,
+                workspace, config,
+                async (exe, args, cwd, ct, env) =>
+                {
+                    var result = await RunProcessAsync(exe, args, cwd, ct, env);
+                    if (exe == "codex")
+                        reviewerUsage += DeveloperTeam.Services.CodexTokenUsage.FromNdjson(result.Output);
+                    return result;
+                }, token,
                 async (attempt, error, ct) =>
                 {
                     var index = await RunProcessAsync("git", ["add", "-N", "."], workspace, ct);
@@ -192,6 +202,12 @@ public sealed class AgentWorker(
             task.TestLog = validation.TestLog;
             task.ReviewStatus = validation.ReviewStatus;
             task.ReviewLog = Limit(validation.ReviewLog, 60_000);
+            task.DeveloperInputTokens = developerUsage.InputTokens;
+            task.DeveloperCachedTokens = developerUsage.CachedInputTokens;
+            task.DeveloperOutputTokens = developerUsage.OutputTokens;
+            task.ReviewerInputTokens = reviewerUsage.InputTokens;
+            task.ReviewerCachedTokens = reviewerUsage.CachedInputTokens;
+            task.ReviewerOutputTokens = reviewerUsage.OutputTokens;
             transcript.AppendLine("Tests: " + task.TestStatus + Environment.NewLine + task.TestLog);
             transcript.AppendLine("Reviewer: " + task.ReviewStatus + Environment.NewLine + task.ReviewLog);
 
