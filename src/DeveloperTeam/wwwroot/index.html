@@ -64,7 +64,7 @@
           const checks = await response.json();
           content.textContent = 'TESTS: ' + (checks.testStatus || 'pending') + '\n' +
             (checks.testLog || '') + '\n\nREVIEWER: ' + (checks.reviewStatus || 'pending') +
-            '\\n' + (checks.reviewLog || '');
+            '\n' + (checks.reviewLog || '');
         } else content.textContent = await response.text();
         document.querySelector('#details-title').textContent = kind === 'log' ? 'Лог агента' : kind === 'checks' ? 'Проверки и Reviewer' : 'Git diff';
         details.hidden = false;
