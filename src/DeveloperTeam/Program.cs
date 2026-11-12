@@ -9,6 +9,7 @@ builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, relo
 var connectionString = builder.Configuration.GetConnectionString("Default")
     ?? throw new InvalidOperationException("ConnectionStrings:Default is required.");
 builder.Services.AddDbContextFactory<AgentDbContext>(options => options.UseNpgsql(connectionString));
+builder.Services.AddHttpClient<DeveloperTeam.Services.GitHubPublisher>();
 
 var role = builder.Configuration["APP_ROLE"] ?? "api";
 if (role.Equals("worker", StringComparison.OrdinalIgnoreCase))
@@ -16,7 +17,14 @@ if (role.Equals("worker", StringComparison.OrdinalIgnoreCase))
 
 var app = builder.Build();
 await using (var db = await app.Services.GetRequiredService<IDbContextFactory<AgentDbContext>>().CreateDbContextAsync())
+{
     await db.Database.EnsureCreatedAsync();
+    await db.Database.ExecuteSqlRawAsync("""
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "CreatePullRequest" boolean NOT NULL DEFAULT FALSE;
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "PullRequestUrl" text NULL;
+        ALTER TABLE "Tasks" ADD COLUMN IF NOT EXISTS "PullRequestBranch" text NULL;
+        """);
+}
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", role }));
 if (role.Equals("api", StringComparison.OrdinalIgnoreCase))

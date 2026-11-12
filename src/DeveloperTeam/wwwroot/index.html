@@ -31,6 +31,7 @@
       <input id="repo" required type="url" value="https://github.com/Skeedon/developer_team">
       <label for="prompt">Что нужно сделать?</label>
       <textarea id="prompt" required maxlength="10000" placeholder="Добавь тесты к классу Calculator, запусти проверки и исправь ошибки…"></textarea>
+      <p><label><input type="checkbox" id="pr" checked style="width:auto;margin-right:8px">Создать Draft Pull Request в GitHub</label></p>
       <p><button id="submit" type="submit">Отправить задачу</button></p>
       <p id="message" class="muted" role="status"></p>
     </form>
@@ -72,6 +73,7 @@
           const status = escapeHtml(t.status);
           const id = encodeURIComponent(t.id);
           const downloadable = t.status === 'completed';
+          const prLink = t.pullRequestUrl ? '<a class="action" target="_blank" rel="noopener noreferrer" href="' + escapeHtml(t.pullRequestUrl) + '">Открыть PR</a>' : '';
           const error = t.error ? '<p class="failed">' + escapeHtml(t.error) + '</p>' : '';
           return '<article class="task"><strong class="status ' + status + '">' + status + '</strong>' +
             '<p>' + escapeHtml(t.prompt) + '</p>' +
@@ -79,7 +81,7 @@
             escapeHtml(new Date(t.createdAt).toLocaleString('ru-RU')) + '</p>' + error +
             '<button class="action" data-id="' + id + '" data-kind="log">Лог</button>' +
             '<button class="action" data-id="' + id + '" data-kind="diff">Diff</button>' +
-            (downloadable ? '<a class="action" href="/api/tasks/' + id + '/download">Скачать ZIP</a>' : '') +
+            (downloadable ? '<a class="action" href="/api/tasks/' + id + '/download">Скачать ZIP</a>' : '') + prLink +
             '</article>';
         }).join('');
       } catch (e) { root.textContent = 'Не удалось загрузить задачи: ' + e.message; }
@@ -97,7 +99,8 @@
         const response = await fetch('/api/tasks', {
           method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({repositoryUrl:document.querySelector('#repo').value,
-            prompt:document.querySelector('#prompt').value})
+            prompt:document.querySelector('#prompt').value,
+            createPullRequest:document.querySelector('#pr').checked})
         });
         const body = await response.json();
         if (!response.ok) throw Error(body.error || JSON.stringify(body));

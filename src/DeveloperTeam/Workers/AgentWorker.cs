@@ -9,7 +9,8 @@ namespace DeveloperTeam.Workers;
 public sealed class AgentWorker(
     IDbContextFactory<AgentDbContext> factory,
     ILogger<AgentWorker> logger,
-    IConfiguration config) : BackgroundService
+    IConfiguration config,
+    DeveloperTeam.Services.GitHubPublisher publisher) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -95,6 +96,13 @@ public sealed class AgentWorker(
             transcript.AppendLine("Git status:" + Environment.NewLine + status.Output);
             task.Diff = Limit(diff.Output, 250_000);
 
+            if (task.CreatePullRequest)
+            {
+                var published = await publisher.PublishAsync(task, workspace, token);
+                task.PullRequestUrl = published.Url;
+                task.PullRequestBranch = published.Branch;
+                transcript.AppendLine("Draft pull request: " + published.Url);
+            }
             task.Status = "completed";
         }
         catch (OperationCanceledException) when (!token.IsCancellationRequested)

@@ -16,7 +16,7 @@ public static class TaskEndpoints
         return Results.Ok(await db.Tasks.AsNoTracking()
             .OrderByDescending(x => x.CreatedAt)
             .Take(100)
-            .Select(x => new { x.Id, x.RepositoryUrl, x.Prompt, x.Status, x.CreatedAt, x.StartedAt, x.FinishedAt, x.Error })
+            .Select(x => new { x.Id, x.RepositoryUrl, x.Prompt, x.Status, x.CreatedAt, x.StartedAt, x.FinishedAt, x.Error, x.CreatePullRequest, x.PullRequestUrl })
             .ToListAsync());
     });
 
@@ -28,6 +28,7 @@ public static class TaskEndpoints
         {
             task.Id, task.RepositoryUrl, task.Prompt, task.Status, task.CreatedAt,
             task.StartedAt, task.FinishedAt, task.Error, task.WorkspacePath,
+            task.CreatePullRequest, task.PullRequestUrl, task.PullRequestBranch,
             HasDiff = !string.IsNullOrWhiteSpace(task.Diff)
         });
     });
@@ -59,6 +60,7 @@ public static class TaskEndpoints
             RepositoryUrl = request.RepositoryUrl.Trim().TrimEnd('/'),
             Prompt = request.Prompt.Trim(),
             Status = "queued",
+            CreatePullRequest = request.CreatePullRequest,
             CreatedAt = DateTime.UtcNow
         };
         await using var db = await factory.CreateDbContextAsync();

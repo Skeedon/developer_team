@@ -13,4 +13,7 @@ public sealed class AgentTask
     public string? Log { get; set; }
     public string? Diff { get; set; }
     public string? Error { get; set; }
+    public bool CreatePullRequest { get; set; }
+    public string? PullRequestUrl { get; set; }
+    public string? PullRequestBranch { get; set; }
 }

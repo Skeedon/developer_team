@@ -32,6 +32,14 @@ PostgreSQL data location: named Docker volume `postgres_data`, mounted under `/v
 
 The worker uses the built-in OpenAI provider and `https://api.openai.com/v1`. Model `gpt-6.1-sol` is an example; verify that your API account can access it, otherwise change `OpenAI:Model`. Billing uses your OpenAI Platform API credits, not ChatGPT subscription usage. Restart the worker after editing the local JSON file.
 
+## GitHub draft PR publishing
+
+Add `GitHub:Token` to ignored `config/appsettings.Local.json`. Create a fine-grained GitHub PAT restricted to your target repository with **Contents: Read and write** and **Pull requests: Read and write** permissions.
+
+The dashboard lets you choose whether to create a draft PR. The worker commits changes in a new `agent/<task-id>` branch, pushes to the specified GitHub repository, and opens a **draft** PR against the default branch. The system does not merge PRs. A task with no changes will fail PR publication instead of creating an empty PR.
+
+**Security:** This MVP runs Codex in the same container as the credential-bearing worker. An untrusted repository could attempt to access the local secret file. Use only repositories you control, restrict the token to those repositories, and keep the API localhost-only. Hardened separation is required before untrusted or multi-user workloads.
+
 ## Local dashboard and downloads
 
 After starting Docker Compose, open **http://localhost:5088/**. Submit tasks, monitor status (refreshes every 5 seconds), inspect logs and diffs, and download completed workspaces as ZIP without entering Docker. The API mounts the workspace Docker volume read-only. Downloads omit `.git`, node_modules, build folders and common secret files; capped at 50 MiB of source data / 1500 files. The dashboard is **not authenticated**, so leave port 5088 bound to localhost only.
