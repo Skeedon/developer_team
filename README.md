@@ -170,11 +170,21 @@ images, image/evaluator token counts and **conservative USD reservations**.
 API routes: `GET /api/tasks/{id}/images` and
 `GET /api/tasks/{id}/images/{assetId}/draft|final`.
 
-For sprite-heavy games, this first implementation intentionally generates
-**at most one PNG per task**. Ask Designer for one specific vehicle with a
-strict side-view reference, not an entire vehicle collection in one task.
-Other cars should be requested separately until the platform supports
-multi-asset image jobs and pooled image budgets.
+For sprite-heavy games, Designer now declares **one PNG per vehicle**
+rather than cramming the fleet into a single sprite atlas. A task may contain
+**up to six distinct PNG assets**, each independently generated and evaluated
+with the same cheap-draft → high-quality-final gate. The platform checks that
+the budget can cover all requested assets *before* the first paid draft.
+The default $0.35 budget is appropriate for one transparent car; for two
+transparent square PNGs, the conservative minimum reservation is $0.414;
+increase the budget deliberately for more cars (task maximum $2.00).
+
+Multi-car sprite sheets, rigid pixel coordinates (for example wheel position
+`y=390`), cell grids and atlases are rejected during manifest parsing for
+car imagery **without any paid image calls**. The model generates **one recognizable
+side-view car at a time**. Browser layout code handles cell placement, margins,
+horizontal mirroring where appropriate, and wheel alignment. On manual retry,
+already completed car PNGs are reused and not regenerated.
 
 **Retry without another coding turn:** if image generation fails before
 tests/review/PR publication (including HTTP 400 for an unsupported background),

@@ -254,4 +254,100 @@ public class ImagePipelineTests
         Assert.True(ImagePipeline.MinimumRemainingBudget("1024x1024", true) > 0.20m);
     }
 
+    [Fact]
+    public async Task TwoSeparateCarsGetSeparateGenerationAndReviewWithinBudget()
+    {
+        var (db, task, path) = await Setup();
+        try
+        {
+            task.ImageBudgetUsd = 0.50m;
+            var two = System.Text.Json.JsonSerializer.Serialize(new { assets = new[] {
+                new { path = "public/assets/bmw.png",
+                    prompt = "One recognizable BMW E36 facing left, strict side profile, fully visible",
+                    criteria = new[] { "Single car", "Exact side view" },
+                    size = "1024x1024", transparent = true },
+                new { path = "public/assets/skyline.png",
+                    prompt = "One recognizable Nissan Skyline facing left, strict side profile, fully visible",
+                    criteria = new[] { "Single car", "Exact side view" },
+                    size = "1024x1024", transparent = true }
+            } });
+            await File.WriteAllTextAsync(Path.Combine(path, "developer-team.assets.json"), two);
+            var api = new FakeImageApi(true, true);
+            await Pipeline(api).RunAsync(task, path, db, CancellationToken.None);
+            Assert.Equal(2, api.DraftCalls);
+            Assert.Equal(2, api.ReviewCalls);
+            Assert.Equal(2, api.EditCalls);
+            Assert.Equal(2, db.GeneratedAssets.Count());
+            Assert.True(File.Exists(Path.Combine(path, "public/assets/bmw.png")));
+            Assert.True(File.Exists(Path.Combine(path, "public/assets/skyline.png")));
+            Assert.Equal(0.414m, task.ImageReservedUsd);
+        }
+        finally { db.Dispose(); Directory.Delete(path, true); }
+    }
+
+    [Fact]
+    public async Task MultiCarJobFailsEarlyIfBudgetCannotCoverAllCars()
+    {
+        var (db, task, path) = await Setup();
+        try
+        {
+            task.ImageBudgetUsd = 0.35m;
+            var two = System.Text.Json.JsonSerializer.Serialize(new { assets = new[] {
+                new { path = "public/assets/bmw.png",
+                    prompt = "One recognizable BMW E36 facing left, strict side profile, fully visible",
+                    criteria = new[] { "Single car", "Exact side view" },
+                    size = "1024x1024", transparent = true },
+                new { path = "public/assets/skyline.png",
+                    prompt = "One recognizable Nissan Skyline facing left, strict side profile, fully visible",
+                    criteria = new[] { "Single car", "Exact side view" },
+                    size = "1024x1024", transparent = true }
+            } });
+            await File.WriteAllTextAsync(Path.Combine(path, "developer-team.assets.json"), two);
+            var api = new FakeImageApi();
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                Pipeline(api).RunAsync(task, path, db, CancellationToken.None));
+            Assert.Contains("Insufficient budget for 2 separate image assets", error.Message);
+            Assert.Empty(api.Endpoints);
+            Assert.Equal(0m, task.ImageReservedUsd);
+        }
+        finally { db.Dispose(); Directory.Delete(path, true); }
+    }
+
+    [Fact]
+    public async Task RetrySkipsPreviouslyCompletedCarWithoutNewPaidCalls()
+    {
+        var (db, task, path) = await Setup();
+        try
+        {
+            task.ImageBudgetUsd = 0.50m;
+            var two = System.Text.Json.JsonSerializer.Serialize(new { assets = new[] {
+                new { path = "public/assets/bmw.png",
+                    prompt = "One recognizable BMW E36 facing left, strict side profile, fully visible",
+                    criteria = new[] { "Single car", "Exact side view" },
+                    size = "1024x1024", transparent = true },
+                new { path = "public/assets/skyline.png",
+                    prompt = "One recognizable Nissan Skyline facing left, strict side profile, fully visible",
+                    criteria = new[] { "Single car", "Exact side view" },
+                    size = "1024x1024", transparent = true }
+            } });
+            await File.WriteAllTextAsync(Path.Combine(path, "developer-team.assets.json"), two);
+            Directory.CreateDirectory(Path.Combine(path, "public/assets"));
+            await File.WriteAllBytesAsync(Path.Combine(path, "public/assets/bmw.png"),
+                new byte[] { 137, 80, 78, 71, 13, 10, 26, 10, 0, 0 });
+            db.GeneratedAssets.Add(new GeneratedAsset {
+                Id = Guid.NewGuid(), TaskId = task.Id, Path = "public/assets/bmw.png",
+                Status = "completed", Prompt = "One BMW E36 side profile", Transparent = true
+            });
+            await db.SaveChangesAsync();
+            task.ImageReservedUsd = 0.207m;
+            var api = new FakeImageApi(true);
+            await Pipeline(api).RunAsync(task, path, db, CancellationToken.None, retry:true);
+            Assert.Equal(1, api.DraftCalls);
+            Assert.Equal(1, api.EditCalls);
+            Assert.Equal(0.414m, task.ImageReservedUsd);
+            Assert.Equal(2, db.GeneratedAssets.Count());
+        }
+        finally { db.Dispose(); Directory.Delete(path, true); }
+    }
+
 }

@@ -39,4 +39,40 @@ public class ImageAssetManifestTests
         Assert.StartsWith(root, ImageAssetManifest.ResolveSafeOutput(root, "public/assets/car.png"));
         Assert.Throws<InvalidOperationException>(() => ImageAssetManifest.ResolveSafeOutput(root, "../escape.png"));
     }
+    [Fact]
+    public void AllowsSeveralDistinctCarImagesWhenEachIsOneCar()
+    {
+        var asset1 = new {
+            path = "public/assets/car-bmw.png",
+            prompt = "One BMW E36 side profile facing left, fully visible on a transparent background",
+            size = "1024x1024", transparent = true,
+            criteria = new[] { "Single car only", "Exact side view" }
+        };
+        var asset2 = new {
+            path = "public/assets/car-skyline.png",
+            prompt = "One Nissan Skyline side profile facing left, fully visible on a transparent background",
+            size = "1024x1024", transparent = true,
+            criteria = new[] { "Single car only", "Exact side view" }
+        };
+        var json = System.Text.Json.JsonSerializer.Serialize(new { assets = new[] { asset1, asset2 } });
+        Assert.Equal(2, ImageAssetManifest.Parse(json).Count);
+    }
+
+    [Theory]
+    [InlineData("Cars drawn as one sprite sheet in a grid with each car in a cell")]
+    [InlineData("All cars must be in a single atlas; wheel baseline y=390")]
+    [InlineData("Draw multiple cars as a 3x2 grid")]
+    [InlineData("Автомобили в атласе, все машины в отдельных ячейках")]
+    public void RejectsImpossibleCarSheetBeforePaidCalls(string description)
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(new { assets = new[] { new {
+            path = "public/assets/cars.png",
+            prompt = "Several cars for the game interface. " + description,
+            criteria = new[] { "Each car has correct placement" },
+            size = "1024x1024", transparent = true
+        } } });
+        var error = Assert.Throws<InvalidOperationException>(() => ImageAssetManifest.Parse(json));
+        Assert.Contains("ONE PNG asset per car", error.Message);
+    }
+
 }

@@ -99,14 +99,16 @@ public sealed class ImagePipeline(HttpClient http, IConfiguration config)
         // A multi-asset task must have enough budget for every requested car
         // before even the FIRST paid draft. Previously completed files on
         // an explicit retry are excluded, so we never regenerate them.
+        var completedPaths = retry
+            ? (await db.Set<GeneratedAsset>().AsNoTracking()
+                .Where(a => a.TaskId == task.Id && a.Status == "completed")
+                .Select(a => a.Path).ToListAsync(ct))
+                .ToHashSet(StringComparer.Ordinal)
+            : new HashSet<string>(StringComparer.Ordinal);
         var pendingAssets = assets.Where(brief =>
-        {
-            if (!retry) return true;
-            var prior = db.Set<GeneratedAsset>().Local.Any(a =>
-                a.TaskId == task.Id && a.Path == brief.Path && a.Status == "completed");
-            var onDisk = File.Exists(ImageAssetManifest.ResolveSafeOutput(workspace, brief.Path));
-            return !(prior && onDisk);
-        }).ToArray();
+            !completedPaths.Contains(brief.Path) ||
+            !File.Exists(ImageAssetManifest.ResolveSafeOutput(workspace, brief.Path)))
+            .ToArray();
         var minimumBudget = pendingAssets.Sum(a => MinimumRemainingBudget(a.Size, a.Transparent));
         if (pendingAssets.Length > 0 &&
             !CanReserve(task.ImageReservedUsd, minimumBudget, task.ImageBudgetUsd))
