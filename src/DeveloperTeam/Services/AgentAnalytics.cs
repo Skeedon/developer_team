@@ -11,11 +11,15 @@ public sealed class AnalyticsTotals
     public long? DeveloperInput { get; set; }
     public long? DeveloperCachedInput { get; set; }
     public long? DeveloperOutput { get; set; }
+    public long? DesignerInput { get; set; }
+    public long? DesignerCachedInput { get; set; }
+    public long? DesignerOutput { get; set; }
     public long? ReviewerInput { get; set; }
     public long? ReviewerCachedInput { get; set; }
     public long? ReviewerOutput { get; set; }
     public int DeveloperMeasuredTasks { get; set; }
     public int ReviewerMeasuredTasks { get; set; }
+    public int DesignerMeasuredTasks { get; set; }
     public int? FixAttempts { get; set; }
     public int? TasksHelpedByFixes { get; set; }
     public int FixMeasuredTasks { get; set; }
@@ -27,6 +31,9 @@ public sealed class DailyTokens
     public long? DeveloperInput { get; set; }
     public long? DeveloperCachedInput { get; set; }
     public long? DeveloperOutput { get; set; }
+    public long? DesignerInput { get; set; }
+    public long? DesignerCachedInput { get; set; }
+    public long? DesignerOutput { get; set; }
     public long? ReviewerInput { get; set; }
     public long? ReviewerCachedInput { get; set; }
     public long? ReviewerOutput { get; set; }
@@ -52,10 +59,14 @@ public static class AgentAnalytics
             AverageDurationSeconds = g.Average(t => t.StartedAt != null && t.FinishedAt >= t.StartedAt
                 ? (double?)(t.FinishedAt.Value - t.StartedAt.Value).TotalSeconds : null),
             DeveloperMeasuredTasks = g.Count(t => t.HasDeveloperMetrics),
+            DesignerMeasuredTasks = g.Count(t => t.HasDesignerMetrics),
             ReviewerMeasuredTasks = g.Count(t => t.HasReviewerMetrics),
             DeveloperInput = g.Any(t => t.HasDeveloperMetrics) ? g.Sum(t => t.HasDeveloperMetrics ? t.DeveloperInputTokens : 0) : null,
             DeveloperCachedInput = g.Any(t => t.HasDeveloperMetrics) ? g.Sum(t => t.HasDeveloperMetrics ? t.DeveloperCachedTokens : 0) : null,
             DeveloperOutput = g.Any(t => t.HasDeveloperMetrics) ? g.Sum(t => t.HasDeveloperMetrics ? t.DeveloperOutputTokens : 0) : null,
+            DesignerInput = g.Any(t => t.HasDesignerMetrics) ? g.Sum(t => t.HasDesignerMetrics ? t.DesignerInputTokens : 0) : null,
+            DesignerCachedInput = g.Any(t => t.HasDesignerMetrics) ? g.Sum(t => t.HasDesignerMetrics ? t.DesignerCachedTokens : 0) : null,
+            DesignerOutput = g.Any(t => t.HasDesignerMetrics) ? g.Sum(t => t.HasDesignerMetrics ? t.DesignerOutputTokens : 0) : null,
             ReviewerInput = g.Any(t => t.HasReviewerMetrics) ? g.Sum(t => t.HasReviewerMetrics ? t.ReviewerInputTokens : 0) : null,
             ReviewerCachedInput = g.Any(t => t.HasReviewerMetrics) ? g.Sum(t => t.HasReviewerMetrics ? t.ReviewerCachedTokens : 0) : null,
             ReviewerOutput = g.Any(t => t.HasReviewerMetrics) ? g.Sum(t => t.HasReviewerMetrics ? t.ReviewerOutputTokens : 0) : null,
@@ -72,6 +83,9 @@ public static class AgentAnalytics
             DeveloperInput = g.Any(t => t.HasDeveloperMetrics) ? g.Sum(t => t.HasDeveloperMetrics ? t.DeveloperInputTokens : 0) : null,
             DeveloperCachedInput = g.Any(t => t.HasDeveloperMetrics) ? g.Sum(t => t.HasDeveloperMetrics ? t.DeveloperCachedTokens : 0) : null,
             DeveloperOutput = g.Any(t => t.HasDeveloperMetrics) ? g.Sum(t => t.HasDeveloperMetrics ? t.DeveloperOutputTokens : 0) : null,
+            DesignerInput = g.Any(t => t.HasDesignerMetrics) ? g.Sum(t => t.HasDesignerMetrics ? t.DesignerInputTokens : 0) : null,
+            DesignerCachedInput = g.Any(t => t.HasDesignerMetrics) ? g.Sum(t => t.HasDesignerMetrics ? t.DesignerCachedTokens : 0) : null,
+            DesignerOutput = g.Any(t => t.HasDesignerMetrics) ? g.Sum(t => t.HasDesignerMetrics ? t.DesignerOutputTokens : 0) : null,
             ReviewerInput = g.Any(t => t.HasReviewerMetrics) ? g.Sum(t => t.HasReviewerMetrics ? t.ReviewerInputTokens : 0) : null,
             ReviewerCachedInput = g.Any(t => t.HasReviewerMetrics) ? g.Sum(t => t.HasReviewerMetrics ? t.ReviewerCachedTokens : 0) : null,
             ReviewerOutput = g.Any(t => t.HasReviewerMetrics) ? g.Sum(t => t.HasReviewerMetrics ? t.ReviewerOutputTokens : 0) : null
