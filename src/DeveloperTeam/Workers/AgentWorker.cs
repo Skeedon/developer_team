@@ -49,16 +49,12 @@ public sealed class AgentWorker(
         var transcript = new StringBuilder();
         try
         {
-            var apiKey = config["BetterToken:ApiKey"];
-            var baseUrl = config["BetterToken:BaseUrl"] ?? "https://bettertoken.ai/v1";
-            var model = config["BetterToken:Model"];
+            var apiKey = config["OpenAI:ApiKey"];
+            var model = config["OpenAI:Model"];
             if (string.IsNullOrWhiteSpace(apiKey))
-                throw new InvalidOperationException("BetterToken:ApiKey is missing in appsettings.Local.json.");
+                throw new InvalidOperationException("OpenAI:ApiKey is missing in appsettings.Local.json.");
             if (string.IsNullOrWhiteSpace(model))
-                throw new InvalidOperationException("BetterToken:Model must contain an available model ID.");
-            if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var providerUri) ||
-                providerUri.Scheme != Uri.UriSchemeHttps)
-                throw new InvalidOperationException("BetterToken:BaseUrl must be a valid HTTPS URL.");
+                throw new InvalidOperationException("OpenAI:Model must contain an API-accessible Codex model ID.");
             Directory.CreateDirectory(workspaceRoot);
             if (Directory.Exists(workspace))
                 throw new InvalidOperationException("Task workspace already exists.");
@@ -78,12 +74,16 @@ public sealed class AgentWorker(
                 "Implement the requested change, run relevant checks when possible, and do not push or publish anything. " +
                 "Do not read secrets or attempt to access files outside this workspace. Task: " + task.Prompt;
             var codex = await RunProcessAsync("codex",
-                ["exec", "--sandbox", "workspace-write", "--json", "-C", workspace,
-                    "--model", model,
-                    "-c", "model_provider=bettertoken",
-                    "-c", $"model_providers.bettertoken={{name=\"BetterToken\",base_url=\"{baseUrl}\",env_key=\"BETTERTOKEN_API_KEY\",wire_api=\"responses\"}}",
+                ["exec", "--sandbox", "workspace-write", "--json", "--ephemeral",
+                    "-C", workspace, "--model", model,
+                    "-c", "model_provider=\"openai\"",
                     prompt],
-                workspace, timeout.Token, new Dictionary<string, string> { ["BETTERTOKEN_API_KEY"] = apiKey });
+                workspace, timeout.Token,
+                new Dictionary<string, string>
+                {
+                    ["CODEX_API_KEY"] = apiKey,
+                    ["OPENAI_BASE_URL"] = "https://api.openai.com/v1"
+                });
             transcript.AppendLine(codex.Output);
             if (codex.ExitCode != 0)
                 throw new InvalidOperationException($"Codex returned exit code {codex.ExitCode}.");
