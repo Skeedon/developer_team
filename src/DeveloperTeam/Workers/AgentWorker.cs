@@ -33,6 +33,19 @@ public sealed class AgentWorker(
                 }
                 else
                 {
+                    var imageRetryId = await db.Tasks.AsNoTracking()
+                        .Where(t => t.Status == "image_retry_queued")
+                        .OrderBy(t => t.CreatedAt).Select(t => t.Id).FirstOrDefaultAsync(stoppingToken);
+                    if (imageRetryId != Guid.Empty)
+                    {
+                        var claimedImageRetry = await db.Tasks
+                            .Where(t => t.Id == imageRetryId && t.Status == "image_retry_queued")
+                            .ExecuteUpdateAsync(x => x.SetProperty(t => t.Status, "running")
+                                .SetProperty(t => t.CurrentStage, TaskProgress.Development), stoppingToken);
+                        if (claimedImageRetry == 1)
+                            await RunTaskAsync(imageRetryId, stoppingToken, resumeImages: true);
+                        continue;
+                    }
                     var repairId = await db.Tasks.AsNoTracking().Where(t => t.Status == "review_fix_queued")
                         .OrderBy(t => t.CreatedAt).Select(t => t.Id).FirstOrDefaultAsync(stoppingToken);
                     if (repairId != Guid.Empty)
@@ -65,17 +78,23 @@ public sealed class AgentWorker(
         }
     }
 
-    private async Task RunTaskAsync(Guid id, CancellationToken token)
+    private async Task RunTaskAsync(Guid id, CancellationToken token, bool resumeImages = false)
     {
         await using var db = await factory.CreateDbContextAsync(token);
         var task = await db.Tasks.FirstAsync(t => t.Id == id, token);
         var workspaceRoot = config["Worker:WorkspaceRoot"] ?? "/workspaces";
         var workspace = Path.Combine(workspaceRoot, id.ToString("N"));
         task.WorkspacePath = workspace;
-        var transcript = new StringBuilder();
-        DeveloperTeam.Services.CodexTokenUsage developerUsage = default;
-        DeveloperTeam.Services.CodexTokenUsage designerUsage = default;
-        DeveloperTeam.Services.CodexTokenUsage reviewerUsage = default;
+        var transcript = new StringBuilder(resumeImages ? (task.Log ?? "") + "\nImage retry requested.\n" : "");
+        DeveloperTeam.Services.CodexTokenUsage developerUsage = resumeImages
+            ? new(task.DeveloperInputTokens, task.DeveloperCachedTokens, task.DeveloperOutputTokens, task.HasDeveloperMetrics)
+            : default;
+        DeveloperTeam.Services.CodexTokenUsage designerUsage = resumeImages
+            ? new(task.DesignerInputTokens, task.DesignerCachedTokens, task.DesignerOutputTokens, task.HasDesignerMetrics)
+            : default;
+        DeveloperTeam.Services.CodexTokenUsage reviewerUsage = resumeImages
+            ? new(task.ReviewerInputTokens, task.ReviewerCachedTokens, task.ReviewerOutputTokens, task.HasReviewerMetrics)
+            : default;
         void RecordUsage()
         {
             task.DeveloperInputTokens = developerUsage.InputTokens;
@@ -103,7 +122,7 @@ public sealed class AgentWorker(
             }
             await db.SaveChangesAsync(ct);
         }
-        task.FixAttempts = 0;
+        if (!resumeImages) task.FixAttempts = 0;
         try
         {
             var apiKey = config["OpenAI:ApiKey"];
@@ -113,6 +132,8 @@ public sealed class AgentWorker(
             if (string.IsNullOrWhiteSpace(model))
                 throw new InvalidOperationException("OpenAI:Model must contain an API-accessible Codex model ID.");
             Directory.CreateDirectory(workspaceRoot);
+            if (!resumeImages)
+            {
             if (Directory.Exists(workspace))
                 throw new InvalidOperationException("Task workspace already exists.");
 
@@ -132,6 +153,17 @@ public sealed class AgentWorker(
             var branch = await RunProcessAsync("git", ["checkout", "-b", $"agent/{id:N}"], workspace, token);
             transcript.AppendLine(branch.Output);
             if (branch.ExitCode != 0) throw new InvalidOperationException("Unable to create task branch.");
+            }
+            else
+            {
+                if (!Directory.Exists(Path.Combine(workspace, ".git")))
+                    throw new InvalidOperationException("Saved task workspace is missing.");
+                var currentBranch = await RunProcessAsync("git", ["branch", "--show-current"], workspace, token);
+                if (currentBranch.ExitCode != 0 ||
+                    currentBranch.Output.Trim() != "agent/" + id.ToString("N"))
+                    throw new InvalidOperationException("Saved task branch does not match the original task.");
+                transcript.AppendLine("Resume existing task branch: " + currentBranch.Output.Trim());
+            }
 
             // No host Docker socket or Git push credentials provided to this runner.
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -172,6 +204,8 @@ public sealed class AgentWorker(
                 return result.Output;
             }
             await RecordStageAsync(TaskProgress.Development, token);
+            if (!resumeImages)
+            {
             string previousHandoff = "";
             foreach (var role in plan)
             {
@@ -204,6 +238,14 @@ public sealed class AgentWorker(
                     // The accepted draft becomes the reference for the high-quality edit.
                     await imagePipeline.RunAsync(task, workspace, db, timeout.Token);
                 }
+            }
+            }
+            else
+            {
+                // No new Codex Designer/Developer turns: resume image pipeline
+                // using the previously persisted image brief and the saved workspace.
+                await imagePipeline.RunAsync(task, workspace, db, timeout.Token, retry: true);
+                transcript.AppendLine("Image generation resumed without rerunning Designer.");
             }
 
             var intent = await RunProcessAsync("git", ["add", "-N", "."], workspace, token);
