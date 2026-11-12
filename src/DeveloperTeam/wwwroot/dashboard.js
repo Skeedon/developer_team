@@ -60,7 +60,7 @@ document.querySelector('#showMemory').addEventListener('click', async () => {
     document.querySelector('#details-title').focus({preventScroll:true});
   } catch (e) { message.textContent = 'Ошибка памяти: ' + e.message; }
 });
-const statuses = {queued:'В очереди',running:'В работе',publishing:'Публикация PR',publish_queued:'PR в очереди',completed:'Завершено',failed:'Ошибка',publish_failed:'Ошибка публикации',review_fix_queued:'Исправление в очереди',review_fixing:'Исправление замечаний',review_fix_failed:'Ошибка исправления'};
+const statuses = {queued:'В очереди',running:'В работе',publishing:'Публикация PR',publish_queued:'PR в очереди',completed:'Завершено',failed:'Ошибка',publish_failed:'Ошибка публикации',review_fix_queued:'Исправление в очереди',review_fixing:'Исправление замечаний',review_fix_failed:'Ошибка исправления',image_retry_queued:'Повторная генерация в очереди'};
 const checkStatuses = {pending:'Ожидание',passed:'Пройдены',failed:'Ошибка',reviewed:'Проверено',fixing:'Исправление замечаний',skipped:'Пропущено',not_run:'Не запускались',running:'В работе'};
 // API integration contract: currentStage = assignment | development | testing | review | publication.
 // The task status determines whether the current stage is running, paused or failed.
@@ -88,7 +88,7 @@ function taskWorkflow(task) {
     if (unknown) return 'pending';
     if (completed || index < stage) return 'done';
     if (index > stage) return 'pending';
-    return failed ? 'error' : ['queued', 'publish_queued', 'review_fix_queued'].includes(task.status) ? 'queued' : 'active';
+    return failed ? 'error' : ['queued', 'publish_queued', 'review_fix_queued', 'image_retry_queued'].includes(task.status) ? 'queued' : 'active';
   });
   return {stage, states, unknown, completed, failed};
 }
@@ -132,7 +132,7 @@ async function loadTasks() {
   try {
     const tasks = await (await read('/api/tasks')).json();
     document.querySelector('#taskCount').textContent = tasks.length;
-    document.querySelector('#activeCount').textContent = tasks.filter(t => ['queued','running','publishing','publish_queued','review_fix_queued','review_fixing'].includes(t.status)).length;
+    document.querySelector('#activeCount').textContent = tasks.filter(t => ['queued','running','publishing','publish_queued','review_fix_queued','review_fixing','image_retry_queued'].includes(t.status)).length;
     document.querySelector('#completedCount').textContent = tasks.filter(t => t.status === 'completed').length;
     document.querySelector('#failedCount').textContent = tasks.filter(t => ['failed','publish_failed','review_fix_failed'].includes(t.status)).length;
     const snapshot = JSON.stringify(tasks);
@@ -165,6 +165,10 @@ async function loadTasks() {
         ' / ' + escapeHtml(t.designerOutputTokens.toLocaleString('ru-RU')) : 'нет данных') +
         ' · Review: ' + (t.hasReviewerMetrics ? escapeHtml(t.reviewerInputTokens.toLocaleString('ru-RU')) +
         ' / ' + escapeHtml(t.reviewerOutputTokens.toLocaleString('ru-RU')) : 'нет данных') + ' <span>(вход / выход)</span></p>';
+      const retryImagesButton = t.status === 'failed' &&
+        t.enableImageGeneration && ['failed', 'rejected'].includes(t.imageStatus) &&
+        !t.pullRequestUrl && Number(t.imageReservedUsd || 0) + 0.015 <= Number(t.imageBudgetUsd || 0)
+        ? '<button class="action" data-id="' + id + '" data-kind="retry-images">Повторить генерацию (платно)</button>' : '';
       const images = t.enableImageGeneration ?
         '<p class="tokens">Изображения · ' + escapeHtml(t.imageStatus || 'Ожидание') +
         ' · бюджет USD ' + Number(t.imageBudgetUsd).toFixed(2) +
@@ -179,7 +183,7 @@ async function loadTasks() {
         '<button class="action" data-id="' + id + '" data-kind="diff">Diff</button>' +
         '<button class="action" data-id="' + id + '" data-kind="checks">Проверки</button>' +
         (t.enableImageGeneration ? '<button class="action" data-id="' + id + '" data-kind="images">Изображения</button>' : '') +
-        (downloadable ? '<a class="action" href="/api/tasks/' + id + '/download">Скачать ZIP</a>' : '') + prLink + retryButton + fixReviewButton +
+        (downloadable ? '<a class="action" href="/api/tasks/' + id + '/download">Скачать ZIP</a>' : '') + prLink + retryButton + fixReviewButton + retryImagesButton +
         '</div></article>';
     }).join('');
     if (focused) {
@@ -216,6 +220,15 @@ root.addEventListener('click', e => {
         await loadTasks();
       })
       .catch(err => { message.textContent = 'Ошибка исправления: ' + err.message; btn.disabled = false; });
+  } else if (btn.dataset.kind === 'retry-images') {
+    btn.disabled = true;
+    fetch('/api/tasks/' + encodeURIComponent(btn.dataset.id) + '/retry-images', {method:'POST'})
+      .then(async response => {
+        if (!response.ok) throw Error(await response.text());
+        message.textContent = 'Изображение поставлено в очередь. Используется прежний код и описание ассета. Новый image API вызов платный.';
+        await loadTasks();
+      })
+      .catch(err => { message.textContent = 'Ошибка повторной генерации: ' + err.message; btn.disabled = false; });
   } else if (btn.dataset.kind === 'images') showImages(btn.dataset.id);
   else showText(btn.dataset.id, btn.dataset.kind);
 });
