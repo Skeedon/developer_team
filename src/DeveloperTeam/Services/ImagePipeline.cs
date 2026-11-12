@@ -58,14 +58,22 @@ public sealed class ImagePipeline(HttpClient http, IConfiguration config)
             throw new InvalidOperationException("OpenAI API key missing for image generation.");
         var draftModel = config["Images:DraftModel"] ?? "gpt-image-2";
         var finalModel = config["Images:FinalModel"] ?? "gpt-image-2";
+        var transparentModel = config["Images:TransparentModel"] ?? "gpt-image-1.5";
         var evaluatorModel = config["Images:EvaluatorModel"] ?? "gpt-4.1-mini";
-        // Fixed, reviewed models in this MVP; avoid silently using unpriced models.
+        // GPT Image 2 transparency is not available to every account; the API can
+        // return 400 invalid_value for background=transparent. Use a model with
+        // established transparency support instead of quietly making opaque sprites.
+        // Fixed, priced models: do not allow arbitrary overrides to bypass budgeting.
         if (draftModel != "gpt-image-2" || finalModel != "gpt-image-2" ||
-            evaluatorModel != "gpt-4.1-mini")
+            transparentModel != "gpt-image-1.5" || evaluatorModel != "gpt-4.1-mini")
             throw new InvalidOperationException("Unsupported image model configuration for the current budget estimator.");
 
         foreach (var brief in assets)
         {
+            // Select a supported model BEFORE reserving funds or making a request.
+            // Both draft and final use the same transparency-capable image family.
+            var selectedDraftModel = ModelForAsset(brief.Transparent, draftModel, transparentModel);
+            var selectedFinalModel = ModelForAsset(brief.Transparent, finalModel, transparentModel);
             // Fail before incurring costs if the output file is unsafe or already exists.
             var output = ImageAssetManifest.ResolveSafeOutput(workspace, brief.Path);
             if (File.Exists(output))
@@ -96,7 +104,7 @@ public sealed class ImagePipeline(HttpClient http, IConfiguration config)
                     var prompt = brief.Prompt +
                         "\nThis is a low quality composition draft. Composition and must-have elements matter most." +
                         (feedback.Length > 0 ? "\nCorrect these visual issues: " + feedback : "");
-                    var draft = await GenerateAsync(key, draftModel, brief, prompt, ct);
+                    var draft = await GenerateAsync(key, selectedDraftModel, brief, prompt, ct);
                     AddTokens(asset, draft);
                     await File.WriteAllBytesAsync(draftFile, draft.Bytes, ct);
 
@@ -128,7 +136,7 @@ public sealed class ImagePipeline(HttpClient http, IConfiguration config)
                 asset.Status = task.ImageStatus = "finalizing";
                 asset.FinalAttempts = 1;
                 await db.SaveChangesAsync(ct);
-                var final = await EditAsync(key, finalModel, brief, accepted, ct);
+                var final = await EditAsync(key, selectedFinalModel, brief, accepted, ct);
                 AddTokens(asset, final);
                 Directory.CreateDirectory(Path.GetDirectoryName(output)!);
                 await File.WriteAllBytesAsync(output, final.Bytes, ct);
@@ -145,6 +153,9 @@ public sealed class ImagePipeline(HttpClient http, IConfiguration config)
             }
         }
     }
+
+    public static string ModelForAsset(bool transparent, string opaqueModel, string transparentModel) =>
+        transparent ? transparentModel : opaqueModel;
 
     private static void Reserve(AgentTask task, GeneratedAsset asset, decimal amount)
     {
