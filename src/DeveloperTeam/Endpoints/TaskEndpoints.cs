@@ -47,6 +47,23 @@ public static class TaskEndpoints
         return task is null ? Results.NotFound() : Results.Text(task.Diff ?? "", "text/plain");
     });
 
+    group.MapPost("/{id:guid}/retry-publish", async (Guid id, IDbContextFactory<AgentDbContext> factory) =>
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        // Atomic state transition; legacy publication failures used "failed".
+        var changed = await db.Tasks
+            .Where(t => t.Id == id && t.CreatePullRequest &&
+                (t.Status == "failed" || t.Status == "publish_failed") &&
+                t.Diff != null && t.Diff != "" && t.PullRequestUrl == null)
+            .ExecuteUpdateAsync(x => x.SetProperty(t => t.Status, "publish_queued")
+                .SetProperty(t => t.Error, (string?)null));
+        if (changed == 1)
+            return Results.Accepted($"/api/tasks/{id}", new { id, status = "publish_queued" });
+        return await db.Tasks.AsNoTracking().AnyAsync(t => t.Id == id)
+            ? Results.Conflict(new { error = "Retry requires a failed PR task with a saved diff and no PR." })
+            : Results.NotFound();
+    });
+
     group.MapPost("/", async (CreateTaskRequest request, IDbContextFactory<AgentDbContext> factory) =>
     {
         if (!RepositoryUrl.IsValid(request.RepositoryUrl))
