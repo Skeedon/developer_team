@@ -151,7 +151,14 @@ public sealed class AgentWorker(
                         throw new TimeoutException("Developer fix attempt timed out.");
                     }
                 },
-                (statusValue, log) => { task.TestStatus = statusValue; task.TestLog = log; });
+                (statusValue, log) => { task.TestStatus = statusValue; task.TestLog = log; },
+                async ct =>
+                {
+                    // Reviewer must see new files produced during any fix, even failed fixes.
+                    var index = await RunProcessAsync("git", ["add", "-N", "."], workspace, ct);
+                    if (index.ExitCode != 0)
+                        throw new InvalidOperationException("Unable to register final files for review: " + index.Output);
+                });
             // Capture all fixes against the original HEAD before the single publication step.
             var finalIndex = await RunProcessAsync("git", ["add", "-N", "."], workspace, token);
             var finalDiff = await RunProcessAsync("git", ["diff", "--no-ext-diff", "--binary", "HEAD"], workspace, token);
