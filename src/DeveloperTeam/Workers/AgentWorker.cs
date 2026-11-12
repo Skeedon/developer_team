@@ -61,12 +61,17 @@ public sealed class AgentWorker(
         task.WorkspacePath = workspace;
         var transcript = new StringBuilder();
         DeveloperTeam.Services.CodexTokenUsage developerUsage = default;
+        DeveloperTeam.Services.CodexTokenUsage designerUsage = default;
         DeveloperTeam.Services.CodexTokenUsage reviewerUsage = default;
         void RecordUsage()
         {
             task.DeveloperInputTokens = developerUsage.InputTokens;
             task.DeveloperCachedTokens = developerUsage.CachedInputTokens;
             task.DeveloperOutputTokens = developerUsage.OutputTokens;
+            task.DesignerInputTokens = designerUsage.InputTokens;
+            task.DesignerCachedTokens = designerUsage.CachedInputTokens;
+            task.DesignerOutputTokens = designerUsage.OutputTokens;
+            task.HasDesignerMetrics = designerUsage.HasMetrics;
             task.ReviewerInputTokens = reviewerUsage.InputTokens;
             task.ReviewerCachedTokens = reviewerUsage.CachedInputTokens;
             task.ReviewerOutputTokens = reviewerUsage.OutputTokens;
@@ -106,8 +111,10 @@ public sealed class AgentWorker(
             // No host Docker socket or Git push credentials provided to this runner.
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
             timeout.CancelAfter(TimeSpan.FromMinutes(config.GetValue<int?>("Worker:TaskTimeoutMinutes") ?? 20));
-            var prompt = DeveloperTeam.Services.AgentRoleInstructions.BuildPrompt(task.Role, task.Prompt);
-            async Task<string> DevelopAsync(string instruction, CancellationToken ct)
+            var plan = DeveloperTeam.Services.AgentRoleInstructions.Plan(task.Role, task.Prompt);
+            task.Participants = string.Join(",", plan);
+            transcript.AppendLine("Team assignment: " + task.Participants);
+            async Task<string> DevelopAsync(string instruction, string executingRole, CancellationToken ct)
             {
                 var result = await RunProcessAsync("codex",
                     ["exec", "--sandbox", "workspace-write", "--json", "--ephemeral",
@@ -120,12 +127,23 @@ public sealed class AgentWorker(
                         ["OPENAI_BASE_URL"] = "https://api.openai.com/v1"
                     });
                 transcript.AppendLine(result.Output);
-                developerUsage += DeveloperTeam.Services.CodexTokenUsage.FromNdjson(result.Output);
+                if (executingRole == "designer")
+                    designerUsage += DeveloperTeam.Services.CodexTokenUsage.FromNdjson(result.Output);
+                else
+                    developerUsage += DeveloperTeam.Services.CodexTokenUsage.FromNdjson(result.Output);
                 if (result.ExitCode != 0)
                     throw new InvalidOperationException($"Codex returned exit code {result.ExitCode}: {result.Output}");
                 return result.Output;
             }
-            await DevelopAsync(prompt, timeout.Token);
+            foreach (var role in plan)
+            {
+                var instruction = DeveloperTeam.Services.AgentRoleInstructions.BuildPrompt(role, task.Prompt);
+                if (plan.Count > 1)
+                    instruction += role == "designer"
+                        ? "\nWork on UI design first. Developer will integrate functional changes afterward in this same workspace."
+                        : "\nDesigner has already contributed UI changes in this workspace. Implement the functional portion and preserve Designer changes.";
+                await DevelopAsync(instruction, role, timeout.Token);
+            }
 
             var intent = await RunProcessAsync("git", ["add", "-N", "."], workspace, token);
             if (intent.ExitCode != 0) throw new InvalidOperationException("Unable to index new files for diff.");
@@ -162,11 +180,13 @@ public sealed class AgentWorker(
                     fixTimeout.CancelAfter(TimeSpan.FromMinutes(config.GetValue<int?>("Worker:TaskTimeoutMinutes") ?? 20));
                     try
                     {
-                        var corrections = await DevelopAsync(prompt + $"\nFix attempt {attempt}. " +
+                        var fixingRole = plan[^1];
+                        var fixPrompt = DeveloperTeam.Services.AgentRoleInstructions.BuildPrompt(fixingRole, task.Prompt);
+                        var corrections = await DevelopAsync(fixPrompt + $"\nFix attempt {attempt}. " +
                             "Fix the failing tests in this SAME workspace, preserving the original task changes. " +
                             "Do not create tasks or branches, commit, reset, push or publish. " +
                             "Describe the corrections you made.\nTest failure:\n" + Limit(error, 24_000) +
-                            "\nCurrent changed files (diff relative to HEAD):\n" + Limit(context.Output, 32_000), fixTimeout.Token);
+                            "\nCurrent changed files (diff relative to HEAD):\n" + Limit(context.Output, 32_000), fixingRole, fixTimeout.Token);
                         var summary = DeveloperTeam.Services.AgentValidation.ExtractReviewerText(corrections);
                         return string.IsNullOrWhiteSpace(summary) ? corrections : summary;
                     }
@@ -212,6 +232,7 @@ public sealed class AgentWorker(
             task.TestStatus = validation.TestStatus;
             task.TestLog = validation.TestLog;
             task.ReviewStatus = validation.ReviewStatus;
+            task.Participants += ",reviewer";
             task.ReviewLog = Limit(validation.ReviewLog, 60_000);
             RecordUsage();
             transcript.AppendLine("Tests: " + task.TestStatus + Environment.NewLine + task.TestLog);
