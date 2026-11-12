@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 
 namespace DeveloperTeam.Services;
@@ -47,7 +48,14 @@ public static class AgentValidation
                 var relative = Path.GetRelativePath(workspace, target);
                 output.AppendLine("$ dotnet test " + relative);
                 var check = await run("dotnet", ["test", relative, "--nologo", "--verbosity", "minimal"],
-                    workspace, timeout.Token, null);
+                    workspace, timeout.Token,
+                    new Dictionary<string, string>
+                    {
+                        ["DOTNET_CLI_HOME"] = "/tmp/dotnet-home",
+                        ["NUGET_PACKAGES"] = "/tmp/nuget-packages",
+                        ["DOTNET_SKIP_FIRST_TIME_EXPERIENCE"] = "1",
+                        ["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1"
+                    });
                 output.AppendLine(check.Output);
                 if (check.ExitCode != 0)
                     return ("failed", output.ToString());
@@ -94,9 +102,11 @@ public static class AgentValidation
                     ["CODEX_API_KEY"] = key,
                     ["OPENAI_BASE_URL"] = "https://api.openai.com/v1"
                 });
-            return result.ExitCode == 0
-                ? ("reviewed", result.Output)
-                : ("failed", "Reviewer exited with code " + result.ExitCode + ": " + result.Output);
+            var summary = ExtractReviewerText(result.Output);
+            return result.ExitCode == 0 && !string.IsNullOrWhiteSpace(summary)
+                ? ("reviewed", summary)
+                : ("failed", "Reviewer exited with code " + result.ExitCode + ": " +
+                    (string.IsNullOrWhiteSpace(summary) ? "No final reviewer message was returned." : summary));
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -106,5 +116,31 @@ public static class AgentValidation
         {
             return ("failed", ex.Message);
         }
+    }
+    // Codex --json emits NDJSON lifecycle events. Only the final agent message
+    // belongs in the human-readable report, not command traces or tool output.
+    public static string ExtractReviewerText(string output)
+    {
+        string? lastMessage = null;
+        foreach (var line in output.Split('\\n'))
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            try
+            {
+                using var json = JsonDocument.Parse(line);
+                var root = json.RootElement;
+                if (!root.TryGetProperty("type", out var kind) ||
+                    kind.GetString() != "item.completed" ||
+                    !root.TryGetProperty("item", out var item) ||
+                    !item.TryGetProperty("type", out var itemType) ||
+                    itemType.GetString() != "agent_message" ||
+                    !item.TryGetProperty("text", out var text))
+                    continue;
+                var message = text.GetString();
+                if (!string.IsNullOrWhiteSpace(message)) lastMessage = message.Trim();
+            }
+            catch (JsonException) { /* Non-JSON stderr lines are not review findings. */ }
+        }
+        return lastMessage ?? "";
     }
 }

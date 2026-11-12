@@ -52,6 +52,10 @@ The Reviewer uses `OpenAI:ReviewerModel` when specified; otherwise `OpenAI:Model
 This second model invocation **consumes additional API tokens**.
 
 The worker image now includes the .NET 9 SDK to run real tests; it is heavier.
+For the unprivileged container user, .NET CLI home and NuGet packages live in
+writable /tmp/dotnet-home and /tmp/nuget-packages. This prevents failures caused by
+.NET trying to create /.dotnet. The Reviewer output is reduced to its final agent
+message instead of exposing raw Codex JSON lifecycle events.
 Tests execute in the same worker container as the coding agent; run **trusted repositories only**.
 Future improvements should use disposable sandboxed runners with credentials isolated.
 
