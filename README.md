@@ -40,6 +40,19 @@ The dashboard lets you provide an optional source branch. The worker clones this
 
 **Security:** This MVP runs Codex in the same container as the credential-bearing worker. An untrusted repository could attempt to access the local secret file. Use only repositories you control, restrict the token to those repositories, and keep the API localhost-only. Hardened separation is required before untrusted or multi-user workloads.
 
+## Retry failed GitHub publication
+
+When coding succeeded but a GitHub push or PR operation failed, the dashboard displays
+**Повторить публикацию PR** on the failed task. It calls
+`POST /api/tasks/{id}/retry-publish` and queues only the existing workspace's Git
+commit, push, and PR creation. **Codex is not run again** and no new OpenAI tokens are spent.
+This also works with earlier tasks marked `failed` when their diff and workspace were saved.
+After a successful retry, status becomes `completed` and the PR URL appears in the dashboard.
+
+For retries to work, keep the `agent_workspaces` Docker volume intact; do not run
+`docker compose down -v`. Rebuild both containers after pulling updates:
+`docker compose up -d --build --force-recreate api worker`.
+
 ## Local dashboard and downloads
 
 After starting Docker Compose, open **http://localhost:5088/**. Submit tasks, monitor status (refreshes every 5 seconds), inspect logs and diffs, and download completed workspaces as ZIP without entering Docker. The API mounts the workspace Docker volume read-only. Downloads omit `.git`, node_modules, build folders and common secret files; capped at 50 MiB of source data / 1500 files. The dashboard is **not authenticated**, so leave port 5088 bound to localhost only.
