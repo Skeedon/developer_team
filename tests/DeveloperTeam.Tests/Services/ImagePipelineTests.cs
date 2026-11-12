@@ -50,6 +50,8 @@ public class ImagePipelineTests
             if (path.EndsWith("/responses"))
             {
                 ReviewCalls++;
+                Assert.Contains("\\"type\\":\\"json_schema\\"", body);
+                Assert.Contains("\\"detail\\":\\"high\\"", body);
                 var pass = reviewPasses.Length >= ReviewCalls && reviewPasses[ReviewCalls - 1];
                 var score = pass ? 0.95 : 0.20;
                 return Json(new { output = new[] { new { content = new[] {
@@ -108,8 +110,9 @@ public class ImagePipelineTests
             using (db)
             {
                 var api = new FakeImageApi(false, false);
-                await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
                     Pipeline(api).RunAsync(task, path, db, CancellationToken.None));
+                Assert.Contains("Car is not in a profile view", error.Message);
                 Assert.Equal(2, api.DraftCalls);
                 Assert.Equal(2, api.ReviewCalls);
                 Assert.Equal(0, api.EditCalls);
@@ -117,6 +120,8 @@ public class ImagePipelineTests
                 Assert.Equal(0.054m, task.ImageReservedUsd);
                 Assert.False(File.Exists(Path.Combine(path, "public/assets/car.png")));
                 Assert.Single(db.GeneratedAssets);
+                Assert.Contains("Draft 1:", db.GeneratedAssets.Single().Review);
+                Assert.Contains("Draft 2:", db.GeneratedAssets.Single().Review);
             }
         }
         finally { Directory.Delete(path, true); }
@@ -138,7 +143,7 @@ public class ImagePipelineTests
                 Assert.Equal("/v1/images/edits", api.Endpoints.Last());
                 Assert.True(File.Exists(Path.Combine(path, "public/assets/car.png")));
                 Assert.Equal("completed", task.ImageStatus);
-                Assert.Equal(0.324m, task.ImageReservedUsd);
+                Assert.Equal(0.234m, task.ImageReservedUsd);
                 Assert.Equal(1, db.GeneratedAssets.Single().FinalAttempts);
                 Assert.Equal(123L * 2 + 456, db.GeneratedAssets.Single().ImageInputTokens);
             }
@@ -177,8 +182,8 @@ public class ImagePipelineTests
                 await Assert.ThrowsAsync<InvalidOperationException>(() =>
                     Pipeline(api).RunAsync(task, path, db, CancellationToken.None));
                 Assert.Equal(0, api.EditCalls);
-                Assert.Equal(1, api.DraftCalls);
-                Assert.Equal(1, api.ReviewCalls);
+                Assert.Equal(0, api.DraftCalls);
+                Assert.Equal(0, api.ReviewCalls);
             }
         }
         finally { Directory.Delete(path, true); }
@@ -216,9 +221,37 @@ public class ImagePipelineTests
             Assert.Equal("completed", task.ImageStatus);
             Assert.True(File.Exists(Path.Combine(path, "public/assets/car.png")));
             Assert.Equal(2, db.GeneratedAssets.Count());
-            Assert.Equal(0.312m, task.ImageReservedUsd);
+            Assert.Equal(0.222m, task.ImageReservedUsd);
         }
         finally { db.Dispose(); Directory.Delete(path, true); }
+    }
+
+    [Theory]
+    [InlineData("""{"pass":true,"score":0.9,"issues":[]}""", true, 0.9)]
+    [InlineData("""{"pass":false,"score":0.2,"issues":["Wrong view"]}""", false, 0.2)]
+    public void VisionVerdictParsesStructuredResponse(string json, bool expectedPass, double expectedScore)
+    {
+        Assert.True(ImagePipeline.TryParseDraftReview(json, out var pass, out var score, out _));
+        Assert.Equal(expectedPass, pass);
+        Assert.Equal(expectedScore, score);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not JSON")]
+    [InlineData("""{"pass":true,"score":1.2,"issues":[]}""")]
+    [InlineData("""{"pass":true,"score":0.9}""")]
+    public void InvalidVisionResponseNeverCountsAsAnApproval(string json)
+    {
+        Assert.False(ImagePipeline.TryParseDraftReview(json, out _, out _, out _));
+    }
+
+    [Fact]
+    public void FinalReservationAccountsForTransparentImageModel()
+    {
+        Assert.Equal(0.18m, ImagePipeline.FinalReserve("1024x1024", transparent: true));
+        Assert.Equal(0.27m, ImagePipeline.FinalReserve("1024x1024", transparent: false));
+        Assert.True(ImagePipeline.MinimumRemainingBudget("1024x1024", true) > 0.20m);
     }
 
 }
