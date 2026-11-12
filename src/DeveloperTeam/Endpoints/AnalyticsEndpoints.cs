@@ -22,10 +22,13 @@ public static class AnalyticsEndpoints
             var recent = await tasks.OrderByDescending(t => t.CreatedAt).ThenBy(t => t.Id).Take(10)
                 .Select(t => new
                 {
-                    t.Id, t.Prompt, t.RepositoryUrl, t.CreatedAt, t.Status, t.TestStatus, t.ReviewStatus,
+                    t.Id, t.Prompt, t.RepositoryUrl, t.Participants, t.CreatedAt, t.Status, t.TestStatus, t.ReviewStatus,
                     DeveloperInput = t.HasDeveloperMetrics ? (long?)t.DeveloperInputTokens : null,
                     DeveloperCachedInput = t.HasDeveloperMetrics ? (long?)t.DeveloperCachedTokens : null,
                     DeveloperOutput = t.HasDeveloperMetrics ? (long?)t.DeveloperOutputTokens : null,
+                    DesignerInput = t.HasDesignerMetrics ? (long?)t.DesignerInputTokens : null,
+                    DesignerCachedInput = t.HasDesignerMetrics ? (long?)t.DesignerCachedTokens : null,
+                    DesignerOutput = t.HasDesignerMetrics ? (long?)t.DesignerOutputTokens : null,
                     ReviewerInput = t.HasReviewerMetrics ? (long?)t.ReviewerInputTokens : null,
                     ReviewerCachedInput = t.HasReviewerMetrics ? (long?)t.ReviewerCachedTokens : null,
                     ReviewerOutput = t.HasReviewerMetrics ? (long?)t.ReviewerOutputTokens : null,
