@@ -36,6 +36,10 @@ public class AppSettingsValidationTests
     }
 
     [Theory]
+    [InlineData("Worker:MaxFixAttempts", "-1")]
+    [InlineData("Worker:MaxFixAttempts", "abc")]
+    [InlineData("Worker:MaxFixAttempts", "")]
+    [InlineData("Worker:MaxFixAttempts", "2147483648")]
     [InlineData("APP_ROLE", "")]
     [InlineData("APP_ROLE", "unknown")]
     [InlineData("ConnectionStrings:Default", null)]
@@ -66,6 +70,15 @@ public class AppSettingsValidationTests
     public void AcceptsSupportedTimeouts(string timeout)
     {
         AppSettingsValidation.Validate(Configuration(("Worker:TaskTimeoutMinutes", timeout)));
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("2")]
+    [InlineData("5")]
+    public void AcceptsFixLimits(string limit)
+    {
+        AppSettingsValidation.Validate(Configuration(("Worker:MaxFixAttempts", limit)));
     }
 
     [Fact]

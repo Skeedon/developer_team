@@ -40,7 +40,23 @@ After Codex edits the repository, the worker executes a bounded `dotnet test` ru
 when it detects a .NET test project. A root `.sln` or `.slnx` is used when available;
 otherwise, each detected test project runs separately. For other stacks or absent
 test projects, the result is `not_configured`; **no green test result is claimed**.
-Timeout: 6 minutes.
+Timeout: 6 minutes per test run.
+
+On failure, Developer receives the original task, failing test output and current
+changed-file diff, and fixes the same workspace and branch. Tests run again after
+each fix, including a failed or timed-out Developer invocation. `Worker:MaxFixAttempts`
+sets the maximum number of fixes (default **2**, nonnegative integer; **0** disables
+fixes). Configure it through worker configuration or `Worker__MaxFixAttempts`.
+Passed or unconfigured tests stop the loop immediately. The independent Reviewer
+runs once after the loop, then optional Draft PR publication runs once.
+
+`TestLog` records attempt 0 (initial tests), each fix number, failure reason,
+Developer corrections and subsequent test result. The final `TestStatus` remains
+`failed` when fixes are exhausted; the dashboard, checks API and PR report explicitly
+show it even when the task itself is `completed`. The original diff is saved before
+fixes in `InitialDiff` (`GET /api/tasks/{id}/initial-diff`); `/diff` contains the final
+changes. Existing tasks may have no initial diff. Publication retry reuses the
+saved workspace without rerunning Developer or the fix loop.
 
 A second, read-only `codex exec` run independently reviews the diff relative to HEAD,
 looking for bugs, security problems, regressions and missing validation/tests.

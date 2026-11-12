@@ -14,12 +14,48 @@ public static class AgentValidation
     public sealed record Result(string TestStatus, string TestLog, string ReviewStatus, string ReviewLog);
 
     public static async Task<Result> RunAsync(
-        string workspace, IConfiguration config, CommandRunner run, CancellationToken ct)
+        string workspace, IConfiguration config, CommandRunner run, CancellationToken ct,
+        Func<int, string, CancellationToken, Task<string>>? fix = null,
+        Action<string, string>? recordTests = null)
     {
+        var maxAttempts = config.GetValue<int?>("Worker:MaxFixAttempts") ?? 2;
+        if (maxAttempts < 0) throw new ArgumentOutOfRangeException(nameof(config), "Worker:MaxFixAttempts must be nonnegative.");
+        var history = new StringBuilder();
         var tests = await RunTestsAsync(workspace, run, ct);
+        Record(0);
+        for (var attempt = 1; tests.Status == "failed" && fix is not null && attempt <= maxAttempts; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+            history.AppendLine($"Fix attempt {attempt}: failure reason:\n{Clip(tests.Log)}");
+            recordTests?.Invoke(tests.Status, history.ToString());
+            try
+            {
+                var changes = await fix(attempt, tests.Log, ct);
+                history.AppendLine("Developer corrections:\n" + Clip(changes));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                history.AppendLine("Developer correction failed: " + Clip(ex.Message));
+            }
+            recordTests?.Invoke(tests.Status, history.ToString());
+            // Even a failed Developer process may have changed files; always verify them.
+            tests = await RunTestsAsync(workspace, run, ct);
+            Record(attempt);
+            if (attempt == maxAttempts) break; // Avoid overflow for int.MaxValue.
+        }
+        history.AppendLine("Final test status: " + tests.Status);
+        recordTests?.Invoke(tests.Status, history.ToString());
         var review = await RunReviewAsync(workspace, config, run, ct);
-        return new Result(tests.Status, tests.Log, review.Status, review.Log);
+        return new Result(tests.Status, history.ToString(), review.Status, review.Log);
+
+        void Record(int attempt)
+        {
+            history.AppendLine($"Test attempt {attempt}: {tests.Status}\n{Clip(tests.Log)}");
+            recordTests?.Invoke(tests.Status, history.ToString());
+        }
     }
+
+    private static string Clip(string text) => text.Length <= 12_000 ? text : text[..6_000] + "\n[truncated]\n" + text[^6_000:];
 
     private static async Task<(string Status, string Log)> RunTestsAsync(
         string workspace, CommandRunner run, CancellationToken ct)
@@ -31,7 +67,7 @@ public static class AgentValidation
                 .Concat(Directory.EnumerateFiles(workspace, "*.slnx", SearchOption.TopDirectoryOnly))
                 .OrderBy(x => x, StringComparer.Ordinal).ToList();
             var testProjects = Directory.EnumerateFiles(workspace, "*.csproj", SearchOption.AllDirectories)
-                .Where(p => !p.Split(Path.DirectorySeparatorChar).Any(s => s is "obj" or "bin" or ".git"))
+                .Where(p => !Path.GetRelativePath(workspace, p).Split(Path.DirectorySeparatorChar).Any(s => s is "obj" or "bin" or ".git"))
                 .Where(p => p.Contains("Test", StringComparison.OrdinalIgnoreCase))
                 .OrderBy(p => p, StringComparer.Ordinal)
                 .ToList();

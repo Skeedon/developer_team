@@ -48,6 +48,13 @@ public static class TaskEndpoints
         return task is null ? Results.NotFound() : Results.Text(task.Diff ?? "", "text/plain");
     });
 
+    group.MapGet("/{id:guid}/initial-diff", async (Guid id, IDbContextFactory<AgentDbContext> factory) =>
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        var task = await db.Tasks.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id);
+        return task is null ? Results.NotFound() : Results.Text(task.InitialDiff ?? "", "text/plain");
+    });
+
     group.MapGet("/{id:guid}/checks", async (Guid id, IDbContextFactory<AgentDbContext> factory) =>
     {
         await using var db = await factory.CreateDbContextAsync();

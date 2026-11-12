@@ -12,6 +12,7 @@ public sealed class AgentTask
     public DateTime? FinishedAt { get; set; }
     public string? WorkspacePath { get; set; }
     public string? Log { get; set; }
+    public string? InitialDiff { get; set; }
     public string? Diff { get; set; }
     public string? Error { get; set; }
     public bool CreatePullRequest { get; set; }

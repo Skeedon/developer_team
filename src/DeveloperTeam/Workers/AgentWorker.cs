@@ -95,34 +95,71 @@ public sealed class AgentWorker(
             var prompt = "You are a coding agent. Work only inside this repository. " +
                 "Implement the requested change, run relevant checks when possible, and do not push or publish anything. " +
                 "Do not read secrets or attempt to access files outside this workspace. Task: " + task.Prompt;
-            var codex = await RunProcessAsync("codex",
-                ["exec", "--sandbox", "workspace-write", "--json", "--ephemeral",
-                    "-C", workspace, "--model", model,
-                    "-c", "model_provider=\"openai\"",
-                    prompt],
-                workspace, timeout.Token,
-                new Dictionary<string, string>
-                {
-                    ["CODEX_API_KEY"] = apiKey,
-                    ["OPENAI_BASE_URL"] = "https://api.openai.com/v1"
-                });
-            transcript.AppendLine(codex.Output);
-            if (codex.ExitCode != 0)
-                throw new InvalidOperationException($"Codex returned exit code {codex.ExitCode}.");
+            async Task<string> DevelopAsync(string instruction, CancellationToken ct)
+            {
+                var result = await RunProcessAsync("codex",
+                    ["exec", "--sandbox", "workspace-write", "--json", "--ephemeral",
+                        "-C", workspace, "--model", model,
+                        "-c", "model_provider=\"openai\"", instruction],
+                    workspace, ct,
+                    new Dictionary<string, string>
+                    {
+                        ["CODEX_API_KEY"] = apiKey,
+                        ["OPENAI_BASE_URL"] = "https://api.openai.com/v1"
+                    });
+                transcript.AppendLine(result.Output);
+                if (result.ExitCode != 0)
+                    throw new InvalidOperationException($"Codex returned exit code {result.ExitCode}: {result.Output}");
+                return result.Output;
+            }
+            await DevelopAsync(prompt, timeout.Token);
 
             var intent = await RunProcessAsync("git", ["add", "-N", "."], workspace, token);
             if (intent.ExitCode != 0) throw new InvalidOperationException("Unable to index new files for diff.");
             var diff = await RunProcessAsync("git", ["diff", "--no-ext-diff", "--binary", "HEAD"], workspace, token);
             var status = await RunProcessAsync("git", ["status", "--short"], workspace, token);
             transcript.AppendLine("Git status:" + Environment.NewLine + status.Output);
+            if (diff.ExitCode != 0) throw new InvalidOperationException("Unable to capture diff.");
             task.Diff = Limit(diff.Output, 250_000);
+            task.InitialDiff = task.Diff;
+            await db.SaveChangesAsync(token);
 
             // Independent checks are run after Codex finishes, before GitHub publication.
             // Test failures do not hide the diff: the PR remains a draft with explicit results.
             var validation = await DeveloperTeam.Services.AgentValidation.RunAsync(
-                workspace, config, RunProcessAsync, token);
+                workspace, config, RunProcessAsync, token,
+                async (attempt, error, ct) =>
+                {
+                    var index = await RunProcessAsync("git", ["add", "-N", "."], workspace, ct);
+                    var context = await RunProcessAsync("git", ["diff", "--no-ext-diff", "--binary", "HEAD"], workspace, ct);
+                    if (index.ExitCode != 0 || context.ExitCode != 0)
+                        throw new InvalidOperationException("Unable to capture changed file context.");
+                    using var fixTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    fixTimeout.CancelAfter(TimeSpan.FromMinutes(config.GetValue<int?>("Worker:TaskTimeoutMinutes") ?? 20));
+                    try
+                    {
+                        var corrections = await DevelopAsync(prompt + $"\nFix attempt {attempt}. " +
+                            "Fix the failing tests in this SAME workspace, preserving the original task changes. " +
+                            "Do not create tasks or branches, commit, reset, push or publish. " +
+                            "Describe the corrections you made.\nTest failure:\n" + Limit(error, 24_000) +
+                            "\nCurrent changed files (diff relative to HEAD):\n" + Limit(context.Output, 32_000), fixTimeout.Token);
+                        var summary = DeveloperTeam.Services.AgentValidation.ExtractReviewerText(corrections);
+                        return string.IsNullOrWhiteSpace(summary) ? corrections : summary;
+                    }
+                    catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                    {
+                        throw new TimeoutException("Developer fix attempt timed out.");
+                    }
+                },
+                (statusValue, log) => { task.TestStatus = statusValue; task.TestLog = log; });
+            // Capture all fixes against the original HEAD before the single publication step.
+            var finalIndex = await RunProcessAsync("git", ["add", "-N", "."], workspace, token);
+            var finalDiff = await RunProcessAsync("git", ["diff", "--no-ext-diff", "--binary", "HEAD"], workspace, token);
+            if (finalIndex.ExitCode != 0 || finalDiff.ExitCode != 0)
+                throw new InvalidOperationException("Unable to capture final diff.");
+            task.Diff = Limit(finalDiff.Output, 250_000);
             task.TestStatus = validation.TestStatus;
-            task.TestLog = Limit(validation.TestLog, 60_000);
+            task.TestLog = validation.TestLog;
             task.ReviewStatus = validation.ReviewStatus;
             task.ReviewLog = Limit(validation.ReviewLog, 60_000);
             transcript.AppendLine("Tests: " + task.TestStatus + Environment.NewLine + task.TestLog);
