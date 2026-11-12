@@ -60,6 +60,20 @@ public sealed class AgentWorker(
         var workspace = Path.Combine(workspaceRoot, id.ToString("N"));
         task.WorkspacePath = workspace;
         var transcript = new StringBuilder();
+        DeveloperTeam.Services.CodexTokenUsage developerUsage = default;
+        DeveloperTeam.Services.CodexTokenUsage reviewerUsage = default;
+        void RecordUsage()
+        {
+            task.DeveloperInputTokens = developerUsage.InputTokens;
+            task.DeveloperCachedTokens = developerUsage.CachedInputTokens;
+            task.DeveloperOutputTokens = developerUsage.OutputTokens;
+            task.ReviewerInputTokens = reviewerUsage.InputTokens;
+            task.ReviewerCachedTokens = reviewerUsage.CachedInputTokens;
+            task.ReviewerOutputTokens = reviewerUsage.OutputTokens;
+            task.HasDeveloperMetrics = developerUsage.HasMetrics;
+            task.HasReviewerMetrics = reviewerUsage.HasMetrics;
+        }
+        task.FixAttempts = 0;
         try
         {
             var apiKey = config["OpenAI:ApiKey"];
@@ -95,8 +109,6 @@ public sealed class AgentWorker(
             var prompt = "You are a coding agent. Work only inside this repository. " +
                 "Implement the requested change, run relevant checks when possible, and do not push or publish anything. " +
                 "Do not read secrets or attempt to access files outside this workspace. Task: " + task.Prompt;
-            DeveloperTeam.Services.CodexTokenUsage developerUsage = default;
-            DeveloperTeam.Services.CodexTokenUsage reviewerUsage = default;
             async Task<string> DevelopAsync(string instruction, CancellationToken ct)
             {
                 var result = await RunProcessAsync("codex",
@@ -143,6 +155,7 @@ public sealed class AgentWorker(
                 }, token,
                 async (attempt, error, ct) =>
                 {
+                    task.FixAttempts++;
                     var index = await RunProcessAsync("git", ["add", "-N", "."], workspace, ct);
                     var context = await RunProcessAsync("git", ["diff", "--no-ext-diff", "--binary", "HEAD"], workspace, ct);
                     if (index.ExitCode != 0 || context.ExitCode != 0)
@@ -202,12 +215,7 @@ public sealed class AgentWorker(
             task.TestLog = validation.TestLog;
             task.ReviewStatus = validation.ReviewStatus;
             task.ReviewLog = Limit(validation.ReviewLog, 60_000);
-            task.DeveloperInputTokens = developerUsage.InputTokens;
-            task.DeveloperCachedTokens = developerUsage.CachedInputTokens;
-            task.DeveloperOutputTokens = developerUsage.OutputTokens;
-            task.ReviewerInputTokens = reviewerUsage.InputTokens;
-            task.ReviewerCachedTokens = reviewerUsage.CachedInputTokens;
-            task.ReviewerOutputTokens = reviewerUsage.OutputTokens;
+            RecordUsage();
             transcript.AppendLine("Tests: " + task.TestStatus + Environment.NewLine + task.TestLog);
             transcript.AppendLine("Reviewer: " + task.ReviewStatus + Environment.NewLine + task.ReviewLog);
 
@@ -246,6 +254,7 @@ public sealed class AgentWorker(
         }
         finally
         {
+            RecordUsage();
             task.Log = Limit(transcript.ToString(), 200_000);
             task.FinishedAt = DateTime.UtcNow;
             // Complete writes even if shutdown token has been cancelled.
@@ -293,7 +302,7 @@ public sealed class AgentWorker(
         }
         finally
         {
-            task.FinishedAt = DateTime.UtcNow;
+            task.RecordPublicationRetry(DateTime.UtcNow);
             await db.SaveChangesAsync(CancellationToken.None);
         }
     }

@@ -24,6 +24,7 @@
 </head>
 <body>
   <header><h1>Developer Team <span style="font-size:18px">⚙️</span></h1><p>Локальная панель для задач ИИ-разработчика · OpenAI Codex</p></header>
+  <nav><a class="action" href="/analytics.html">Аналитика агентов</a></nav>
   <section class="panel">
     <h2>Новая задача</h2>
     <form id="form">
@@ -97,10 +98,10 @@
             ? '<button class="action" data-id="' + id + '" data-kind="retry">Повторить публикацию PR</button>' : '';
           const checksLabel = '<span class="muted">Тесты: ' + escapeHtml(t.testStatus || '—') +
             ' · Reviewer: ' + escapeHtml(t.reviewStatus || '—') +
-            ' · Токены Dev: ' + escapeHtml((t.developerInputTokens || 0).toLocaleString('ru-RU')) +
-            '/' + escapeHtml((t.developerOutputTokens || 0).toLocaleString('ru-RU')) +
-            ' · Review: ' + escapeHtml((t.reviewerInputTokens || 0).toLocaleString('ru-RU')) +
-            '/' + escapeHtml((t.reviewerOutputTokens || 0).toLocaleString('ru-RU')) + ' (вход/выход)</span>';
+            ' · Токены Dev: ' + (t.hasDeveloperMetrics ? escapeHtml(t.developerInputTokens.toLocaleString('ru-RU')) +
+            '/' + escapeHtml(t.developerOutputTokens.toLocaleString('ru-RU')) : 'Нет данных') +
+            ' · Review: ' + (t.hasReviewerMetrics ? escapeHtml(t.reviewerInputTokens.toLocaleString('ru-RU')) +
+            '/' + escapeHtml(t.reviewerOutputTokens.toLocaleString('ru-RU')) : 'Нет данных') + ' (вход/выход)</span>';
           const error = t.error ? '<p class="failed">' + escapeHtml(t.error) + '</p>' : '';
           return '<article class="task"><strong class="status ' + status + '">' + status + '</strong>' +
             '<p>' + escapeHtml(t.prompt) + '</p>' + '<p>' + checksLabel + '</p>' +

@@ -36,10 +36,20 @@ public class AgentValidationTests
     public void ExtractReviewerText_PreservesFindingFormatting()
     {
         const string transcript = """
-            {"type":"item.completed","item":{"type":"agent_message","text":"High: src/file.cs:12\\nFix validation."}}
+            {"type":"item.completed","item":{"type":"agent_message","text":"High: src/file.cs:12\nFix validation."}}
             """;
 
         Assert.Equal("High: src/file.cs:12\nFix validation.", AgentValidation.ExtractReviewerText(transcript));
+    }
+
+    [Fact]
+    public void ExtractReviewerText_PreservesLiteralBackslashN()
+    {
+        const string transcript = """
+            {"type":"item.completed","item":{"type":"agent_message","text":"Preserve the literal \\n sequence."}}
+            """;
+
+        Assert.Equal("Preserve the literal \\n sequence.", AgentValidation.ExtractReviewerText(transcript));
     }
 
     [Theory]
