@@ -6,7 +6,8 @@ services:
     environment:
       POSTGRES_DB: developer_team
       POSTGRES_USER: agent
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: developer-team-local-only
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -14,7 +15,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 15
-
   api:
     build:
       context: .
@@ -23,17 +23,13 @@ services:
     environment:
       APP_ROLE: api
       ASPNETCORE_URLS: http://0.0.0.0:8080
-      ConnectionStrings__Default: Host=postgres;Port=5432;Database=developer_team;Username=agent;Password=${POSTGRES_PASSWORD}
     ports:
       - "127.0.0.1:5088:8080"
     depends_on:
       postgres:
         condition: service_healthy
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
   worker:
     build:
       context: .
@@ -41,23 +37,18 @@ services:
     restart: unless-stopped
     environment:
       APP_ROLE: worker
-      ConnectionStrings__Default: Host=postgres;Port=5432;Database=developer_team;Username=agent;Password=${POSTGRES_PASSWORD}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       CODEX_HOME: /tmp/codex-home
-      WORKSPACE_ROOT: /workspaces
     volumes:
       - agent_workspaces:/workspaces
+      - ./config/appsettings.Local.json:/app/appsettings.Local.json:ro
     depends_on:
       postgres:
         condition: service_healthy
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
     pids_limit: 256
     mem_limit: 3g
     cpus: 2
-
 volumes:
   postgres_data:
   agent_workspaces:

@@ -1,75 +1,51 @@
 # Developer Team
 
-A local, Docker-based foundation for autonomous code development using ASP.NET Core, PostgreSQL, and Codex CLI.
+Local coding-agent platform on **ASP.NET Core 9, PostgreSQL 16, Docker and Codex CLI**. Uses [BetterToken](https://docs.bettertoken.ai/en) as an OpenAI-compatible Responses API provider.
 
-## What works in v0.1
+## Solution layout
 
-- REST endpoints to create and inspect development tasks.
-- PostgreSQL persistence and a single polling background worker.
-- Git clone of a **public** GitHub repository into a dedicated workspace for each task.
-- Non-interactive Codex CLI execution with `workspace-write` sandbox.
-- Captured execution log and Git diff, available through the API.
-- No automatic push, PR, or merge. Review the changes locally first.
+- `DeveloperTeam.sln` — Visual Studio solution at the repository root
+- `src/DeveloperTeam/Program.cs` — application composition root
+- `src/DeveloperTeam/Domain` — task model and requests
+- `src/DeveloperTeam/Data` — EF Core PostgreSQL context
+- `src/DeveloperTeam/Endpoints` — minimal API mappings
+- `src/DeveloperTeam/Workers` — execution loop and Codex runner
+- `src/DeveloperTeam/Validation` — repository URL validation
+- `src/DeveloperTeam/appsettings.json` — default application settings
 
-**This is an experimental single-user development tool, not a hardened multi-tenant service.** Run on a trusted machine; do not expose the API to the Internet. Tasks allow code execution, repositories are untrusted, and a model API key is available to the worker process.
+## Configure
 
-## Start
+Copy `src/DeveloperTeam/appsettings.Local.example.json` to `config/appsettings.Local.json` (create the `config` directory). Fill in `BetterToken:ApiKey`, and replace `BetterToken:Model` with the **exact model ID** available in your BetterToken account.
 
-Requirements: Docker Desktop, Docker Compose, an OpenAI API key with Codex-compatible access.
-
-```bash
-cp .env.example .env
-# Set OPENAI_API_KEY in .env
-docker compose up --build -d
-curl http://localhost:5088/health
-```
-
-PowerShell:
+The worker binds `config/appsettings.Local.json` to `/app/appsettings.Local.json` as read-only. The key is NOT committed and is passed to Codex as `BETTERTOKEN_API_KEY` for the child process only.
 
 ```powershell
-Copy-Item .env.example .env
+New-Item -ItemType Directory -Force config
+Copy-Item src/DeveloperTeam/appsettings.Local.example.json config/appsettings.Local.json
+# Edit config/appsettings.Local.json
 docker compose up --build -d
 Invoke-RestMethod http://localhost:5088/health
 ```
 
-API documentation: `docs/API.md`.
+Database connection string: `src/DeveloperTeam/appsettings.json` → `ConnectionStrings:Default`.
+PostgreSQL data location: named Docker volume `postgres_data`, mounted under `/var/lib/postgresql/data`, PGDATA=`/var/lib/postgresql/data/pgdata`. Database name: `developer_team`. Initial password `developer-team-local-only` is **only for local trusted development**; change it in both Docker Compose and appsettings before any shared deployment. Never expose the API or database publicly.
 
-Example task:
+Model provider URL: `BetterToken:BaseUrl=https://bettertoken.ai/v1`. Codex uses the Responses protocol with a custom provider. Compatibility varies by model; test a small task first. This setup does not use the official OpenAI account subscription for billing.
 
-```bash
-curl -X POST http://localhost:5088/api/tasks \
-  -H "Content-Type: application/json" \
-  -d '{"repositoryUrl":"https://github.com/Skeedon/developer_team","prompt":"Add a small unit test project for domain validation."}'
+## API
+
+```http
+GET /health
+GET /api/tasks
+GET /api/tasks/{id}
+GET /api/tasks/{id}/log
+GET /api/tasks/{id}/diff
+POST /api/tasks
+Content-Type: application/json
+
+{"repositoryUrl":"https://github.com/Skeedon/developer_team","prompt":"Add a unit test project."}
 ```
 
-Inspect `GET /api/tasks/{id}`, `GET /api/tasks/{id}/log`, and `GET /api/tasks/{id}/diff`. Workspaces persist in Docker volume `agent_workspaces`; to inspect manually: `docker compose exec worker sh`.
+Current limitations: single worker, public GitHub repositories only, no auth, no PR publishing, no reviewer agent, no deterministic build/test stage, no hardened per-task container. Each task gets a dedicated Git workspace. No automatic Git push. Run only locally on trusted infrastructure; the Codex process runs code in the worker container. Logs and diffs have size caps, tasks have a 20-minute timeout.
 
-## Architecture
-
-```
-Caller -> API -> PostgreSQL <- Worker
-                           |
-                           +-> git clone -> codex exec -> git diff -> database
-```
-
-The API is bound to loopback (`127.0.0.1:5088`). The worker does not receive the host Docker socket. The initial release executes one task at a time and does not use a broker. The worker uses the same application binary with a different `APP_ROLE`.
-
-## Safety and limitations
-
-- Only public `https://github.com/OWNER/REPO` URLs are accepted; no arbitrary Git URLs.
-- Never mount your home directory, SSH agent, host Docker socket, or privileged credentials into the worker.
-- Codex may run commands in the worker container; use a disposable environment and a scoped API key.
-- Codex's own workspace sandbox is defense-in-depth, not a hard isolation boundary. For stronger isolation, the next iteration will launch a fresh restricted container per task with network controls and explicit resource limits.
-- Logs and patches are capped in the API database to avoid unbounded storage. Long-running tasks are timed out.
-- `EnsureCreated` is used for this initial schema; replace with EF Core migrations before evolving the schema.
-- No authenticated users, cancellation endpoint, retry, image evaluation, real QA agent, or GitHub push yet.
-- API key costs are incurred by Codex; monitor your provider usage.
-
-## Roadmap
-
-1. Task lifecycle / execution history / limits (this release).
-2. Isolated ephemeral containers and deterministic build/test commands.
-3. Reviewer agent and repair loop.
-4. Playwright and screenshot-based visual assessment.
-5. GitHub branch push + draft pull request with explicit user-controlled credentials.
-6. Multi-agent orchestration and dashboard.
+**Security:** do not put an API key in committed appsettings.json. Keep local secrets in ignored config/appsettings.Local.json. For production migrate to Docker secrets or a secret manager; do not use the development PostgreSQL password.

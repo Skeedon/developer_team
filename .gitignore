@@ -4,7 +4,8 @@ obj/
 .idea/
 .env
 .env.*
-!.env.example
+appsettings.Local.json
+config/
 workspaces/
 **/node_modules/
 *.user

@@ -3,5 +3,6 @@
 **/obj
 .env
 .env.*
+config/
 workspaces
 **/node_modules

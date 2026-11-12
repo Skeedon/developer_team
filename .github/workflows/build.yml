@@ -12,6 +12,6 @@ jobs:
         with:
           dotnet-version: '9.0.x'
       - name: Restore
-        run: dotnet restore src/DeveloperTeam/DeveloperTeam.csproj
+        run: dotnet restore DeveloperTeam.sln
       - name: Build
-        run: dotnet build src/DeveloperTeam/DeveloperTeam.csproj --no-restore -c Release
+        run: dotnet build DeveloperTeam.sln --no-restore -c Release
