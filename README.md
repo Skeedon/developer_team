@@ -28,6 +28,8 @@ Invoke-RestMethod http://localhost:5088/health
 ```
 
 Database connection string: `src/DeveloperTeam/appsettings.json` → `ConnectionStrings:Default`.
+Settings are automatically validated at startup, before any database access. Invalid settings stop startup with a list of parameter names and errors, without printing their values. `APP_ROLE` must be `api` (the default) or `worker`; `ConnectionStrings:Default` must be a PostgreSQL connection string with a host. When specified, `Worker:WorkspaceRoot` must be a nonempty valid path and `Worker:TaskTimeoutMinutes` must be an integer from 1 to 71582 (default: 20). The worker also requires nonempty `OpenAI:ApiKey` and `OpenAI:Model`; an explicit `OpenAI:ReviewerModel` must be nonempty. `GitHub:Token` remains optional and is required only when publishing a PR.
+
 PostgreSQL data location: named Docker volume `postgres_data`, mounted under `/var/lib/postgresql/data`, PGDATA=`/var/lib/postgresql/data/pgdata`. Database name: `developer_team`. Initial password `developer-team-local-only` is **only for local trusted development**; change it in both Docker Compose and appsettings before any shared deployment. Never expose the API or database publicly.
 
 The worker uses the built-in OpenAI provider and `https://api.openai.com/v1`. Model `gpt-6.1-sol` is an example; verify that your API account can access it, otherwise change `OpenAI:Model`. Billing uses your OpenAI Platform API credits, not ChatGPT subscription usage. Restart the worker after editing the local JSON file.
