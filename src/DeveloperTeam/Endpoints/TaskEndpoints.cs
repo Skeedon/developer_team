@@ -97,6 +97,23 @@ public static class TaskEndpoints
             : Results.NotFound();
     });
 
+    group.MapPost("/{id:guid}/retry-images", async (Guid id, IDbContextFactory<AgentDbContext> factory) =>
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        // Atomic transition: duplicate clicks cannot enqueue another paid image request.
+        var changed = await db.Tasks.Where(DeveloperTeam.Services.ImageRetryPolicy.Eligible)
+            .Where(t => t.Id == id)
+            .ExecuteUpdateAsync(x => x.SetProperty(t => t.Status, "image_retry_queued")
+                .SetProperty(t => t.CurrentStage, TaskProgress.Development)
+                .SetProperty(t => t.Error, (string?)null));
+        if (changed == 1)
+            return Results.Accepted($"/api/tasks/{id}",
+                new { id, status = "image_retry_queued", currentStage = TaskProgress.Development });
+        return await db.Tasks.AsNoTracking().AnyAsync(t => t.Id == id)
+            ? Results.Conflict(new { error = "Only failed image tasks with a saved workspace and remaining image budget can be retried." })
+            : Results.NotFound();
+    });
+
     group.MapPost("/{id:guid}/retry-publish", async (Guid id, IDbContextFactory<AgentDbContext> factory) =>
     {
         await using var db = await factory.CreateDbContextAsync();
