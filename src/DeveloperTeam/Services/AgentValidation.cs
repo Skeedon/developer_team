@@ -18,11 +18,13 @@ public static class AgentValidation
         Func<int, string, CancellationToken, Task<string>>? fix = null,
         Action<string, string>? recordTests = null,
         Func<CancellationToken, Task>? prepareReview = null,
-        string? reviewerMemory = null)
+        string? reviewerMemory = null,
+        Func<string, CancellationToken, Task>? recordStage = null)
     {
         var maxAttempts = config.GetValue<int?>("Worker:MaxFixAttempts") ?? 2;
         if (maxAttempts < 0) throw new ArgumentOutOfRangeException(nameof(config), "Worker:MaxFixAttempts must be nonnegative.");
         var history = new StringBuilder();
+        if (recordStage is not null) await recordStage(Domain.TaskProgress.Testing, ct);
         var tests = await RunTestsAsync(workspace, run, ct);
         Record(0);
         for (var attempt = 1; tests.Status == "failed" && !IsInfrastructureFailure(tests.Log) && fix is not null && attempt <= maxAttempts; attempt++)
@@ -48,6 +50,7 @@ public static class AgentValidation
         history.AppendLine("Final test status: " + tests.Status);
         recordTests?.Invoke(tests.Status, history.ToString());
         if (prepareReview is not null) await prepareReview(ct);
+        if (recordStage is not null) await recordStage(Domain.TaskProgress.Review, ct);
         var review = await RunReviewAsync(workspace, config, run, reviewerMemory, ct);
         return new Result(tests.Status, history.ToString(), review.Status, review.Log, review.Memory);
 

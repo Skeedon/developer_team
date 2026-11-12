@@ -26,6 +26,7 @@ public sealed class AgentWorker(
                     // Atomic claim: protects against two workers executing the same task.
                     var claimed = await db.Tasks.Where(t => t.Id == next && t.Status == "queued")
                         .ExecuteUpdateAsync(s => s.SetProperty(t => t.Status, "running")
+                            .SetProperty(t => t.CurrentStage, TaskProgress.Assignment)
                             .SetProperty(t => t.StartedAt, DateTime.UtcNow), stoppingToken);
                     if (claimed == 1) await RunTaskAsync(next, stoppingToken);
                 }
@@ -38,7 +39,8 @@ public sealed class AgentWorker(
                     else
                     {
                         var claimed = await db.Tasks.Where(t => t.Id == retry && t.Status == "publish_queued")
-                            .ExecuteUpdateAsync(x => x.SetProperty(t => t.Status, "publishing"), stoppingToken);
+                            .ExecuteUpdateAsync(x => x.SetProperty(t => t.Status, "publishing")
+                                .SetProperty(t => t.CurrentStage, TaskProgress.Publication), stoppingToken);
                         if (claimed == 1) await RetryPublishAsync(retry, stoppingToken);
                     }
                 }
@@ -77,6 +79,18 @@ public sealed class AgentWorker(
             task.ReviewerOutputTokens = reviewerUsage.OutputTokens;
             task.HasDeveloperMetrics = developerUsage.HasMetrics;
             task.HasReviewerMetrics = reviewerUsage.HasMetrics;
+        }
+        async Task RecordStageAsync(string stage, CancellationToken ct)
+        {
+            TaskProgress.Advance(task, stage);
+            if (stage == TaskProgress.Testing) task.TestStatus = "running";
+            if (stage == TaskProgress.Review)
+            {
+                task.ReviewStatus = "running";
+                task.Participants = string.Join(",", task.Participants.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Append("reviewer").Distinct());
+            }
+            await db.SaveChangesAsync(ct);
         }
         task.FixAttempts = 0;
         try
@@ -135,6 +149,7 @@ public sealed class AgentWorker(
                     throw new InvalidOperationException($"Codex returned exit code {result.ExitCode}: {result.Output}");
                 return result.Output;
             }
+            await RecordStageAsync(TaskProgress.Development, token);
             foreach (var role in plan)
             {
                 var instruction = DeveloperTeam.Services.AgentRoleInstructions.BuildPrompt(role, task.Prompt);
@@ -172,6 +187,7 @@ public sealed class AgentWorker(
                 async (attempt, error, ct) =>
                 {
                     task.FixAttempts++;
+                    await db.SaveChangesAsync(ct);
                     var index = await RunProcessAsync("git", ["add", "-N", "."], workspace, ct);
                     var context = await RunProcessAsync("git", ["diff", "--no-ext-diff", "--binary", "HEAD"], workspace, ct);
                     if (index.ExitCode != 0 || context.ExitCode != 0)
@@ -203,7 +219,7 @@ public sealed class AgentWorker(
                     if (index.ExitCode != 0)
                         throw new InvalidOperationException("Unable to register final files for review: " + index.Output);
                 },
-                previousReviewMemory);
+                previousReviewMemory, RecordStageAsync);
             if (validation.ReviewStatus == "reviewed" &&
                 !string.IsNullOrWhiteSpace(validation.UpdatedReviewMemory))
             {
@@ -232,7 +248,6 @@ public sealed class AgentWorker(
             task.TestStatus = validation.TestStatus;
             task.TestLog = validation.TestLog;
             task.ReviewStatus = validation.ReviewStatus;
-            task.Participants += ",reviewer";
             task.ReviewLog = Limit(validation.ReviewLog, 60_000);
             RecordUsage();
             transcript.AppendLine("Tests: " + task.TestStatus + Environment.NewLine + task.TestLog);
@@ -241,6 +256,7 @@ public sealed class AgentWorker(
             if (task.CreatePullRequest)
             {
                 task.Status = "publishing";
+                await RecordStageAsync(TaskProgress.Publication, token);
                 DeveloperTeam.Services.GitHubPublisher.PublishedPullRequest published;
                 try { published = await publisher.PublishAsync(task, workspace, token); }
                 catch (Exception ex) when (ex is not OperationCanceledException)

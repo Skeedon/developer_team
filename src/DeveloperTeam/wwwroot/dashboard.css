@@ -163,3 +163,43 @@ h1{letter-spacing:-.8px}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
 }
 
+
+/* Task workflow: numbered milestones stay readable without hover or color. */
+.workflow{margin:20px 0 16px;padding:16px;border:1px solid #30394c;border-radius:10px;background:linear-gradient(120deg,#1e2435,#151b25)}
+.workflow-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px}
+.workflow-caption{font-size:10px;color:#a6b2c8}
+.workflow-title{font-size:13px;line-height:1.5;font-weight:600;color:#e0e5ff;margin:3px 0 0;overflow-wrap:anywhere}
+.workflow-count{font-size:10px;color:#a6b2c8;white-space:nowrap;font-variant-numeric:tabular-nums}
+.workflow-steps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));list-style:none;margin:0;padding:0}
+.workflow-step{position:relative;display:flex;align-items:center;flex-direction:column;gap:9px;text-align:center;color:#96a4ba;min-width:0;font-size:10px;line-height:1.4}
+.workflow-step:not(:last-child):after{content:"";position:absolute;top:14px;left:calc(50% + 18px);width:calc(100% - 36px);height:2px;background:#384155;transition:background .25s ease}
+.step-node{display:grid;place-items:center;position:relative;width:30px;height:30px;border-radius:50%;border:1px solid #46516a;background:#1a2130;font-size:11px;font-weight:650;transition:background .25s,border-color .25s,box-shadow .25s}
+.step-label{padding:0 3px;overflow-wrap:anywhere}
+.is-done{color:#9cdbbf}
+.is-done .step-node{background:#203b34;border-color:#416e5e;color:#a1e3c7}
+.workflow-step.is-done:after{background:#416e5e}
+.is-active,.is-queued{color:#d1d8ff}
+.is-active .step-node,.is-queued .step-node{border-color:#9daaff;background:#353e68;box-shadow:0 0 0 4px #8b9cff15;color:#e4e8ff}
+.is-active .step-label,.is-error .step-label{font-weight:650}
+.is-error{color:#ffb5be}
+.is-error .step-node{background:#432a35;border-color:#d78496;color:#ffb5be}
+.is-skipped .step-node{border-style:dashed;color:#96a4ba;background:transparent}
+.is-skipped .step-label{text-decoration:line-through;text-decoration-color:#59657a}
+.task-team{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 16px}
+.team-caption{font-size:10px;color:var(--muted);margin-right:2px}
+.team-member{display:inline-flex;align-items:center;gap:6px;font-size:10px;color:#c2cce0}
+.team-avatar{width:23px;height:23px;display:grid;place-items:center;background:#282f49;border:1px solid #404a70;border-radius:7px;color:#bbc6ff;font:10px ui-monospace,monospace}
+.team-designer .team-avatar{background:#33283e;border-color:#594366;color:#ddb8f6}
+.team-reviewer .team-avatar{background:#20352f;border-color:#3c5b50;color:#9cdbbf}
+.team-pending{font-size:10px;color:var(--muted)}
+@media(max-width:480px){
+.workflow{padding:14px 12px}
+.workflow-heading{align-items:flex-start}
+.workflow-count{font-size:9px;padding-top:3px}
+.workflow-steps{grid-template-columns:1fr;gap:0}
+.workflow-step{flex-direction:row;gap:12px;text-align:left;min-height:43px;font-size:11px}
+.workflow-step:not(:last-child):after{top:34px;left:13px;width:2px;height:15px}
+.step-node{width:28px;height:28px;flex-shrink:0}
+.step-label{padding:0}
+.task-header{align-items:flex-start}
+}
