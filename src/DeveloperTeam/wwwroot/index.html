@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Developer Team</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:dark;background:#101318;color:#e9edf3}
+    *{box-sizing:border-box}body{max-width:1050px;margin:35px auto;padding:0 20px}
+    h1{margin:0;font-size:30px}p{color:#abb5c3}h2{font-size:17px}
+    .panel{background:#1b2029;border:1px solid #303946;border-radius:13px;padding:22px;margin:18px 0}
+    label{display:block;font-size:13px;font-weight:650;margin:15px 0 7px}
+    input,textarea{width:100%;border:1px solid #465063;background:#121820;color:inherit;border-radius:8px;padding:12px;font:inherit}
+    textarea{min-height:110px;resize:vertical}
+    button,.action{display:inline-block;background:#2978df;border:0;border-radius:8px;color:white;padding:10px 15px;cursor:pointer;font:inherit;text-decoration:none}
+    button:disabled{opacity:.55;cursor:wait}
+    .action{background:#303f57;margin:4px 6px 4px 0;font-size:13px}
+    .muted{color:#9da8b8;font-size:13px}.task{border-top:1px solid #38404d;padding:16px 0}
+    .task:first-child{border-top:0}.task p{margin:7px 0;overflow-wrap:anywhere}
+    .status{font-weight:bold;color:#a0c5ff}.completed{color:#78ddb0}.failed{color:#ffa7a7}
+    pre{overflow:auto;white-space:pre-wrap;word-break:break-word;background:#0f151e;border:1px solid #394457;padding:15px;border-radius:8px;max-height:420px}
+    #message{min-height:1.4em}
+  </style>
+</head>
+<body>
+  <header><h1>Developer Team <span style="font-size:18px">⚙️</span></h1><p>Локальная панель для задач ИИ-разработчика · OpenAI Codex</p></header>
+  <section class="panel">
+    <h2>Новая задача</h2>
+    <form id="form">
+      <label for="repo">GitHub-репозиторий (публичный)</label>
+      <input id="repo" required type="url" value="https://github.com/Skeedon/developer_team">
+      <label for="prompt">Что нужно сделать?</label>
+      <textarea id="prompt" required maxlength="10000" placeholder="Добавь тесты к классу Calculator, запусти проверки и исправь ошибки…"></textarea>
+      <p><button id="submit" type="submit">Отправить задачу</button></p>
+      <p id="message" class="muted" role="status"></p>
+    </form>
+  </section>
+  <section class="panel">
+    <h2>Задачи <button id="refresh" class="action" type="button">Обновить</button></h2>
+    <div id="tasks" aria-live="polite"><p>Загружаю...</p></div>
+  </section>
+  <section class="panel" id="details" hidden>
+    <h2 id="details-title">Результат</h2>
+    <pre id="details-content"></pre>
+  </section>
+  <script>
+    const root = document.querySelector('#tasks');
+    const message = document.querySelector('#message');
+    const details = document.querySelector('#details');
+    const content = document.querySelector('#details-content');
+    const escapeHtml = x => String(x ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    async function read(url) {
+      const response = await fetch(url);
+      if (!response.ok) throw Error(await response.text());
+      return response;
+    }
+    async function showText(id, kind) {
+      try {
+        const response = await read('/api/tasks/' + encodeURIComponent(id) + '/' + kind);
+        content.textContent = await response.text();
+        document.querySelector('#details-title').textContent = kind === 'log' ? 'Лог агента' : 'Git diff';
+        details.hidden = false;
+        details.scrollIntoView({behavior:'smooth'});
+      } catch (e) { message.textContent = e.message; }
+    }
+    window.showTaskText = showText;
+    async function loadTasks() {
+      try {
+        const tasks = await (await read('/api/tasks')).json();
+        if (!tasks.length) { root.innerHTML = '<p>Задач пока нет.</p>'; return; }
+        root.innerHTML = tasks.map(t => {
+          const status = escapeHtml(t.status);
+          const id = encodeURIComponent(t.id);
+          const downloadable = t.status === 'completed';
+          const error = t.error ? '<p class="failed">' + escapeHtml(t.error) + '</p>' : '';
+          return '<article class="task"><strong class="status ' + status + '">' + status + '</strong>' +
+            '<p>' + escapeHtml(t.prompt) + '</p>' +
+            '<p class="muted">' + escapeHtml(t.repositoryUrl) + ' · ' +
+            escapeHtml(new Date(t.createdAt).toLocaleString('ru-RU')) + '</p>' + error +
+            '<button class="action" data-id="' + id + '" data-kind="log">Лог</button>' +
+            '<button class="action" data-id="' + id + '" data-kind="diff">Diff</button>' +
+            (downloadable ? '<a class="action" href="/api/tasks/' + id + '/download">Скачать ZIP</a>' : '') +
+            '</article>';
+        }).join('');
+      } catch (e) { root.textContent = 'Не удалось загрузить задачи: ' + e.message; }
+    }
+    root.addEventListener('click', e => {
+      const btn = e.target.closest('button[data-id]');
+      if (btn) showText(btn.dataset.id, btn.dataset.kind);
+    });
+    document.querySelector('#refresh').addEventListener('click', loadTasks);
+    document.querySelector('#form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const button = document.querySelector('#submit');
+      button.disabled = true; message.textContent = 'Отправляю...';
+      try {
+        const response = await fetch('/api/tasks', {
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({repositoryUrl:document.querySelector('#repo').value,
+            prompt:document.querySelector('#prompt').value})
+        });
+        const body = await response.json();
+        if (!response.ok) throw Error(body.error || JSON.stringify(body));
+        message.textContent = 'Задача создана: ' + body.id;
+        document.querySelector('#prompt').value = '';
+        await loadTasks();
+      } catch (err) { message.textContent = 'Ошибка: ' + err.message; }
+      finally { button.disabled = false; }
+    });
+    loadTasks();setInterval(loadTasks,5000);
+  </script>
+</body>
+</html>

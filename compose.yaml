@@ -24,7 +24,10 @@ services:
     restart: unless-stopped
     environment:
       APP_ROLE: api
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=developer_team;Username=agent;Password=developer-team-local-only"
       ASPNETCORE_URLS: http://0.0.0.0:8080
+    volumes:
+      - agent_workspaces:/workspaces:ro
     ports:
       - "127.0.0.1:5088:8080"
     depends_on:
@@ -40,6 +43,7 @@ services:
     environment:
       APP_ROLE: worker
       CODEX_HOME: /tmp/codex-home
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=developer_team;Username=agent;Password=developer-team-local-only"
     volumes:
       - agent_workspaces:/workspaces
       - ./config/appsettings.Local.json:/app/appsettings.Local.json:ro

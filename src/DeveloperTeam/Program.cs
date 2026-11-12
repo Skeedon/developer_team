@@ -20,5 +20,10 @@ await using (var db = await app.Services.GetRequiredService<IDbContextFactory<Ag
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", role }));
 if (role.Equals("api", StringComparison.OrdinalIgnoreCase))
+{
+    app.UseDefaultFiles();
+    app.UseStaticFiles();
     app.MapTaskEndpoints();
+    app.MapArtifactEndpoints();
+}
 await app.RunAsync();
