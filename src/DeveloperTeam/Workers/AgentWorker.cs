@@ -302,7 +302,7 @@ public sealed class AgentWorker(
         }
         finally
         {
-            task.FinishedAt = DateTime.UtcNow;
+            task.RecordPublicationRetry(DateTime.UtcNow);
             await db.SaveChangesAsync(CancellationToken.None);
         }
     }
