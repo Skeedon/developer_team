@@ -168,4 +168,92 @@ public class AgentValidationTests
         }
         finally { Directory.Delete(workspace, true); }
     }
+
+    [Fact]
+    public async Task PostFixNewFiles_AreRegisteredBeforeReviewerRuns()
+    {
+        var workspace = Path.Combine(Path.GetTempPath(), "review-files-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(workspace);
+        await File.WriteAllTextAsync(Path.Combine(workspace, "Example.Tests.csproj"), "<Project />");
+        try
+        {
+            bool registered = false;
+            int testAttempts = 0;
+            var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["OpenAI:ApiKey"] = "test-key",
+                ["OpenAI:Model"] = "test-model",
+                ["Worker:MaxFixAttempts"] = "1"
+            }).Build();
+
+            var result = await AgentValidation.RunAsync(workspace, config,
+                (exe, args, cwd, _, _) =>
+                {
+                    if (exe == "dotnet")
+                        return Task.FromResult((++testAttempts == 1 ? 1 : 0, "test error"));
+                    Assert.Equal("codex", exe);
+                    Assert.True(registered, "New files must be registered before Reviewer runs.");
+                    Assert.True(File.Exists(Path.Combine(workspace, "NewFile.cs")));
+                    return Task.FromResult((0, "{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"No actionable findings\"}}"));
+                }, CancellationToken.None,
+                (_, _, _) =>
+                {
+                    File.WriteAllText(Path.Combine(workspace, "NewFile.cs"), "namespace Example;");
+                    return Task.FromResult("Added NewFile.cs");
+                },
+                null,
+                ct =>
+                {
+                    Assert.True(File.Exists(Path.Combine(workspace, "NewFile.cs")));
+                    registered = true;
+                    return Task.CompletedTask;
+                });
+
+            Assert.Equal("passed", result.TestStatus);
+            Assert.Equal("reviewed", result.ReviewStatus);
+            Assert.Equal(2, testAttempts);
+        }
+        finally { Directory.Delete(workspace, true); }
+    }
+
+    [Fact]
+    public async Task InfrastructureFailure_DoesNotInvokeDeveloperFix()
+    {
+        var workspace = Path.Combine(Path.GetTempPath(), "infra-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(workspace);
+        await File.WriteAllTextAsync(Path.Combine(workspace, "Example.Tests.csproj"), "<Project />");
+        try
+        {
+            var fixes = 0;
+            var testRuns = 0;
+            var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["OpenAI:ApiKey"] = "test-key",
+                ["OpenAI:Model"] = "test-model"
+            }).Build();
+
+            var result = await AgentValidation.RunAsync(workspace, config,
+                (exe, args, cwd, _, env) =>
+                {
+                    if (exe == "dotnet")
+                    {
+                        testRuns++;
+                        Assert.Equal("/tmp/dotnet-home", env!["HOME"]);
+                        return Task.FromResult((1, "NuGet-Migrations: errno == EACCES"));
+                    }
+                    return Task.FromResult((0, "{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"Review complete\"}}"));
+                }, CancellationToken.None,
+                (_, _, _) =>
+                {
+                    fixes++;
+                    return Task.FromResult("unexpected correction");
+                });
+
+            Assert.Equal("failed", result.TestStatus);
+            Assert.Equal(1, testRuns);
+            Assert.Equal(0, fixes);
+            Assert.Equal("reviewed", result.ReviewStatus);
+        }
+        finally { Directory.Delete(workspace, true); }
+    }
 }
